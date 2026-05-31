@@ -377,6 +377,52 @@ function summarizeInvoiceItems(items) {
   return `${product}${quantity ? ` | Qty: ${quantity}` : ""}`;
 }
 
+function scoreInvoiceItems(items) {
+  const text = items.map((item) => item.text).join(" ");
+  let score = items.length;
+  if (/\b(description|product|item)\b/i.test(text)) score += 80;
+  if (/\b(qty|quantity)\b/i.test(text)) score += 80;
+  if (/\b(tax|invoice|amount|price)\b/i.test(text)) score += 20;
+  return score;
+}
+
+function itemsInsideBox(textContent, box, pageHeight, mode) {
+  return textContent.items
+    .map((item) => {
+      const rawX = item.transform[4];
+      const rawY = item.transform[5];
+      const y = mode === "flipped-y" ? pageHeight - rawY : rawY;
+      return {
+        text: item.str,
+        x: rawX,
+        y,
+        width: item.width || 0,
+      };
+    })
+    .filter((item) => {
+      return item.x >= box.left && item.x <= box.right && item.y >= box.bottom && item.y <= box.top;
+    });
+}
+
+function bestInvoiceItems(textContent, box, pageHeight) {
+  const normalItems = itemsInsideBox(textContent, box, pageHeight, "normal");
+  const flippedItems = itemsInsideBox(textContent, box, pageHeight, "flipped-y");
+  const normalScore = scoreInvoiceItems(normalItems);
+  const flippedScore = scoreInvoiceItems(flippedItems);
+  const best = flippedScore > normalScore ? flippedItems : normalItems;
+
+  if (best.length) return best;
+
+  return textContent.items
+    .map((item) => ({
+      text: item.str,
+      x: item.transform[4],
+      y: item.transform[5],
+      width: item.width || 0,
+    }))
+    .filter((item) => item.x >= box.left && item.x <= box.right);
+}
+
 function makePdfTextSafe(text) {
   return text
     .replace(/₹/g, "Rs.")
@@ -402,19 +448,10 @@ async function extractInvoiceSummaries(pdfBytes, sourcePages, allPairs) {
     const pdfPage = await pdf.getPage(pageIndex + 1);
     const textContent = await pdfPage.getTextContent();
     const pairs = allPairs[pageIndex];
+    const pageHeight = sourcePages[pageIndex].getSize().height;
 
     for (const pair of pairs) {
-      const items = textContent.items
-        .map((item) => ({
-          text: item.str,
-          x: item.transform[4],
-          y: item.transform[5],
-          width: item.width || 0,
-        }))
-        .filter((item) => {
-          const box = pair.invoiceBox;
-          return item.x >= box.left && item.x <= box.right && item.y >= box.bottom && item.y <= box.top;
-        });
+      const items = bestInvoiceItems(textContent, pair.invoiceBox, pageHeight);
 
       summaries.push(summarizeInvoiceItems(items));
     }
@@ -428,11 +465,13 @@ function drawInvoiceSummary(page, summary, font, boldFont, target, areaHeight) {
   if (!summary || areaHeight <= 0) return;
 
   const safeSummary = makePdfTextSafe(summary);
+  if (!safeSummary) return;
   const padding = 10;
   const headingSize = 8;
   const bodySize = 8;
   const maxChars = Math.max(28, Math.floor((target.width - padding * 2) / (bodySize * 0.48)));
   const lines = lineWrap(safeSummary, maxChars).slice(0, 3);
+  if (!lines.length) return;
   let y = areaHeight - padding - headingSize;
 
   page.drawText("Product / Qty", {
