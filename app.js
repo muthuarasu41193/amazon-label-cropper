@@ -284,15 +284,17 @@ function groupTextItemsIntoRows(items) {
 function cleanProductText(text) {
   return text
     .replace(/₹/g, "Rs.")
-    .replace(/\b(description|product name|product|item|qty|quantity)\b/gi, " ")
-    .replace(/\b(hsn|sku|asin|unit price|net amount|tax rate|tax type|igst|cgst|sgst|total amount|amount|invoice)\b.*$/i, " ")
+    .replace(/\b(description|product name|product|item|qty|quantity|ordered item)\b/gi, " ")
+    .replace(/\b(hsn|sku|asin|fsn|unit price|net amount|tax rate|tax type|igst|cgst|sgst|total amount|amount|invoice|price|discount|serial no|seller)\b.*$/i, " ")
+    .replace(/\b\d{8,}\b/g, " ")
+    .replace(/\b[A-Z0-9]{8,}\b/g, " ")
     .replace(/^\s*(sl\.?\s*no\.?|s\.?\s*no\.?|no\.?)?\s*\d+[\).\-\s]*/i, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function rowHasStopText(text) {
-  return /\b(total|subtotal|tax amount|tax rate|authorized signatory|signature|amount in words|reverse charge)\b/i.test(text);
+  return /\b(total|subtotal|tax amount|tax rate|authorized signatory|signature|amount in words|reverse charge|payment|declaration)\b/i.test(text);
 }
 
 function likelyProductRow(row) {
@@ -351,26 +353,28 @@ function summarizeInvoiceItems(items) {
       if (qtyMatch) quantity = qtyMatch[1];
     }
 
-    if (productRows.length >= 3 && quantity) break;
+    if (productRows.length >= 1 && quantity) break;
   }
 
-  let product = cleanProductText(productRows.join(" "));
+  let product = cleanProductText(productRows[0] || "");
   if (!product) {
     const fallback = rows
       .filter(likelyProductRow)
       .map((row) => cleanProductText(row.text))
       .filter(Boolean)
-      .slice(0, 2)
-      .join(" ");
+      .sort((a, b) => b.length - a.length)[0];
     product = fallback || "Not detected";
   }
+
+  product = product.replace(/\s+[0-9,.]+(\s+Rs\.)?.*$/i, "").trim();
+  product = product.length > 90 ? `${product.slice(0, 87).trim()}...` : product;
 
   if (!quantity) {
     const qtyLine = rows.find((row) => /\b(qty|quantity)\b/i.test(row.text) && /\d+/.test(row.text));
     quantity = qtyLine?.text.match(/\b(?:qty|quantity)\D*(\d+)/i)?.[1] || "";
   }
 
-  return `Product: ${product}${quantity ? ` | Qty: ${quantity}` : ""}`;
+  return `${product}${quantity ? ` | Qty: ${quantity}` : ""}`;
 }
 
 function makePdfTextSafe(text) {
@@ -426,12 +430,12 @@ function drawInvoiceSummary(page, summary, font, boldFont, target, areaHeight) {
   const safeSummary = makePdfTextSafe(summary);
   const padding = 10;
   const headingSize = 8;
-  const bodySize = 7.5;
+  const bodySize = 8;
   const maxChars = Math.max(28, Math.floor((target.width - padding * 2) / (bodySize * 0.48)));
-  const lines = lineWrap(safeSummary, maxChars).slice(0, 6);
+  const lines = lineWrap(safeSummary, maxChars).slice(0, 3);
   let y = areaHeight - padding - headingSize;
 
-  page.drawText("Product", {
+  page.drawText("Product / Qty", {
     x: padding,
     y,
     size: headingSize,
