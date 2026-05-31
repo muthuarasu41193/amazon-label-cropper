@@ -1,4 +1,9 @@
-const { PDFDocument, rgb } = PDFLib;
+const { PDFDocument, StandardFonts, rgb } = PDFLib;
+
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
 
 const fileInput = document.getElementById("pdfFile");
 const dropZone = document.querySelector(".drop-zone");
@@ -17,6 +22,7 @@ const marginPercent = document.getElementById("marginPercent");
 const leftPercentValue = document.getElementById("leftPercentValue");
 const marginPercentValue = document.getElementById("marginPercentValue");
 const skipBlank = document.getElementById("skipBlank");
+const includeInvoiceText = document.getElementById("includeInvoiceText");
 
 let selectedFile = null;
 let previewUrl = null;
@@ -86,7 +92,7 @@ function getOutputSize(cropWidth, cropHeight) {
   return PAGE_SIZES[value];
 }
 
-function labelBoxesForPage(page) {
+function pairedBoxesForPage(page) {
   const { width, height } = page.getSize();
   const leftWidth = width * (Number(leftPercent.value) / 100);
   const rightStart = width - leftWidth;
@@ -97,16 +103,32 @@ function labelBoxesForPage(page) {
   if (cropPreset.value === "right-half") {
     return [
       {
-        left: rightStart + margin,
-        bottom: height / 2 + margin,
-        right: width - margin,
-        top: height - margin,
+        labelBox: {
+          left: rightStart + margin,
+          bottom: height / 2 + margin,
+          right: width - margin,
+          top: height - margin,
+        },
+        invoiceBox: {
+          left: margin,
+          bottom: height / 2 + margin,
+          right: leftWidth - margin,
+          top: height - margin,
+        },
       },
       {
-        left: rightStart + margin,
-        bottom: margin,
-        right: width - margin,
-        top: height / 2 - margin,
+        labelBox: {
+          left: rightStart + margin,
+          bottom: margin,
+          right: width - margin,
+          top: height / 2 - margin,
+        },
+        invoiceBox: {
+          left: margin,
+          bottom: margin,
+          right: leftWidth - margin,
+          top: height / 2 - margin,
+        },
       },
     ];
   }
@@ -114,16 +136,32 @@ function labelBoxesForPage(page) {
   if (cropPreset.value === "top-half") {
     return [
       {
-        left: margin,
-        bottom: height / 2 + margin,
-        right: leftWidth - margin,
-        top: height - margin,
+        labelBox: {
+          left: margin,
+          bottom: height / 2 + margin,
+          right: leftWidth - margin,
+          top: height - margin,
+        },
+        invoiceBox: {
+          left: leftWidth + margin,
+          bottom: height / 2 + margin,
+          right: width - margin,
+          top: height - margin,
+        },
       },
       {
-        left: leftWidth + margin,
-        bottom: height / 2 + margin,
-        right: width - margin,
-        top: height - margin,
+        labelBox: {
+          left: leftWidth + margin,
+          bottom: height / 2 + margin,
+          right: width - margin,
+          top: height - margin,
+        },
+        invoiceBox: {
+          left: margin,
+          bottom: height / 2 + margin,
+          right: leftWidth - margin,
+          top: height - margin,
+        },
       },
     ];
   }
@@ -131,34 +169,275 @@ function labelBoxesForPage(page) {
   if (cropPreset.value === "bottom-half") {
     return [
       {
-        left: margin,
-        bottom: margin,
-        right: leftWidth - margin,
-        top: height / 2 - margin,
+        labelBox: {
+          left: margin,
+          bottom: margin,
+          right: leftWidth - margin,
+          top: height / 2 - margin,
+        },
+        invoiceBox: {
+          left: leftWidth + margin,
+          bottom: margin,
+          right: width - margin,
+          top: height / 2 - margin,
+        },
       },
       {
-        left: leftWidth + margin,
-        bottom: margin,
-        right: width - margin,
-        top: height / 2 - margin,
+        labelBox: {
+          left: leftWidth + margin,
+          bottom: margin,
+          right: width - margin,
+          top: height / 2 - margin,
+        },
+        invoiceBox: {
+          left: margin,
+          bottom: margin,
+          right: leftWidth - margin,
+          top: height / 2 - margin,
+        },
       },
     ];
   }
 
   return [
     {
-      left: margin,
-      bottom: height / 2 + margin,
-      right: margin + boxWidth,
-      top: height - margin,
+      labelBox: {
+        left: margin,
+        bottom: height / 2 + margin,
+        right: margin + boxWidth,
+        top: height - margin,
+      },
+      invoiceBox: {
+        left: rightStart + margin,
+        bottom: height / 2 + margin,
+        right: width - margin,
+        top: height - margin,
+      },
     },
     {
-      left: margin,
-      bottom: margin,
-      right: margin + boxWidth,
-      top: height / 2 - margin,
+      labelBox: {
+        left: margin,
+        bottom: margin,
+        right: margin + boxWidth,
+        top: height / 2 - margin,
+      },
+      invoiceBox: {
+        left: rightStart + margin,
+        bottom: margin,
+        right: width - margin,
+        top: height / 2 - margin,
+      },
     },
   ];
+}
+
+function lineWrap(text, maxChars) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = "";
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxChars && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines;
+}
+
+function groupTextItemsIntoRows(items) {
+  const sorted = [...items].sort((a, b) => {
+    if (Math.abs(a.y - b.y) > 3) return b.y - a.y;
+    return a.x - b.x;
+  });
+  const rows = [];
+
+  for (const item of sorted) {
+    const row = rows.find((entry) => Math.abs(entry.y - item.y) <= 3);
+    if (row) {
+      row.items.push(item);
+      row.y = (row.y + item.y) / 2;
+    } else {
+      rows.push({ y: item.y, items: [item] });
+    }
+  }
+
+  return rows.map((row) => {
+    const rowItems = row.items.sort((a, b) => a.x - b.x);
+    return {
+      y: row.y,
+      items: rowItems,
+      text: rowItems
+        .map((item) => item.text)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim(),
+    };
+  }).filter((row) => row.text);
+}
+
+function cleanProductText(text) {
+  return text
+    .replace(/\b(description|product name|product|item|qty|quantity)\b/gi, " ")
+    .replace(/\b(hsn|sku|asin|unit price|net amount|tax rate|tax type|igst|cgst|sgst|total amount|amount|invoice)\b.*$/i, " ")
+    .replace(/^\s*(sl\.?\s*no\.?|s\.?\s*no\.?|no\.?)?\s*\d+[\).\-\s]*/i, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function rowHasStopText(text) {
+  return /\b(total|subtotal|tax amount|tax rate|authorized signatory|signature|amount in words|reverse charge)\b/i.test(text);
+}
+
+function likelyProductRow(row) {
+  const text = row.text;
+  if (rowHasStopText(text)) return false;
+  if (/\b(order id|invoice|billing address|shipping address|sold by|ship from|pan no|gst)\b/i.test(text)) return false;
+  if (!/[a-zA-Z]{3,}/.test(text)) return false;
+  return true;
+}
+
+function findHeaderColumns(rows) {
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const headerItems = row.items.filter((item) => /\b(description|product|item|qty|quantity)\b/i.test(item.text));
+    const descriptionItem = headerItems.find((item) => /\b(description|product|item)\b/i.test(item.text));
+    const quantityItem = headerItems.find((item) => /\b(qty|quantity)\b/i.test(item.text));
+
+    if (descriptionItem || quantityItem || /\bdescription\b/i.test(row.text)) {
+      return {
+        index,
+        descriptionX: descriptionItem?.x ?? row.items[0]?.x ?? 0,
+        quantityX: quantityItem?.x ?? null,
+      };
+    }
+  }
+
+  return null;
+}
+
+function summarizeInvoiceItems(items) {
+  const rows = groupTextItemsIntoRows(items);
+  const header = findHeaderColumns(rows);
+  const searchableRows = rows.slice(header ? header.index + 1 : 0);
+  const quantityX = header?.quantityX;
+  const productRows = [];
+  let quantity = "";
+
+  for (const row of searchableRows) {
+    if (rowHasStopText(row.text)) break;
+    if (!likelyProductRow(row)) continue;
+
+    const productItems = row.items.filter((item) => {
+      if (quantityX === null || quantityX === undefined) return true;
+      return item.x < quantityX - 4;
+    });
+    const productPart = cleanProductText(productItems.map((item) => item.text).join(" "));
+    if (productPart) productRows.push(productPart);
+
+    if (!quantity && quantityX !== null && quantityX !== undefined) {
+      const quantityItem = row.items.find((item) => item.x >= quantityX - 10 && item.x <= quantityX + 55 && /^\d+$/.test(item.text.trim()));
+      if (quantityItem) quantity = quantityItem.text.trim();
+    }
+
+    if (!quantity) {
+      const qtyMatch = row.text.match(/\b(?:qty|quantity)\D*(\d+)/i);
+      if (qtyMatch) quantity = qtyMatch[1];
+    }
+
+    if (productRows.length >= 3 && quantity) break;
+  }
+
+  let product = cleanProductText(productRows.join(" "));
+  if (!product) {
+    const fallback = rows
+      .filter(likelyProductRow)
+      .map((row) => cleanProductText(row.text))
+      .filter(Boolean)
+      .slice(0, 2)
+      .join(" ");
+    product = fallback || "Not detected";
+  }
+
+  if (!quantity) {
+    const qtyLine = rows.find((row) => /\b(qty|quantity)\b/i.test(row.text) && /\d+/.test(row.text));
+    quantity = qtyLine?.text.match(/\b(?:qty|quantity)\D*(\d+)/i)?.[1] || "";
+  }
+
+  return `Product: ${product}${quantity ? ` | Qty: ${quantity}` : ""}`;
+}
+
+async function extractInvoiceSummaries(pdfBytes, sourcePages, allPairs) {
+  if (!includeInvoiceText.checked) return [];
+  if (!window.pdfjsLib) {
+    throw new Error("PDF text reader did not load. Please check your internet connection and refresh.");
+  }
+
+  const loadingTask = pdfjsLib.getDocument({ data: pdfBytes.slice(0) });
+  const pdf = await loadingTask.promise;
+  const summaries = [];
+
+  for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
+    const pdfPage = await pdf.getPage(pageIndex + 1);
+    const textContent = await pdfPage.getTextContent();
+    const pairs = allPairs[pageIndex];
+
+    for (const pair of pairs) {
+      const items = textContent.items
+        .map((item) => ({
+          text: item.str,
+          x: item.transform[4],
+          y: item.transform[5],
+          width: item.width || 0,
+        }))
+        .filter((item) => {
+          const box = pair.invoiceBox;
+          return item.x >= box.left && item.x <= box.right && item.y >= box.bottom && item.y <= box.top;
+        });
+
+      summaries.push(summarizeInvoiceItems(items));
+    }
+  }
+
+  await loadingTask.destroy();
+  return summaries;
+}
+
+function drawInvoiceSummary(page, summary, font, boldFont, target, areaHeight) {
+  if (!summary || areaHeight <= 0) return;
+
+  const padding = 10;
+  const headingSize = 8;
+  const bodySize = 7.5;
+  const maxChars = Math.max(28, Math.floor((target.width - padding * 2) / (bodySize * 0.48)));
+  const lines = lineWrap(summary, maxChars).slice(0, 6);
+  let y = areaHeight - padding - headingSize;
+
+  page.drawText("Product", {
+    x: padding,
+    y,
+    size: headingSize,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
+
+  y -= 11;
+  for (const line of lines) {
+    if (y < 5) break;
+    page.drawText(line, {
+      x: padding,
+      y,
+      size: bodySize,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    y -= 9;
+  }
 }
 
 async function looksBlank(sourcePdf, pageIndex, box) {
@@ -178,18 +457,28 @@ async function createCroppedPdf(file) {
   const bytes = await file.arrayBuffer();
   const sourcePdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const outputPdf = await PDFDocument.create();
+  const textFont = await outputPdf.embedFont(StandardFonts.Helvetica);
+  const boldFont = await outputPdf.embedFont(StandardFonts.HelveticaBold);
   const sourcePages = sourcePdf.getPages();
+  const allPairs = sourcePages.map((page) => pairedBoxesForPage(page));
+  const invoiceSummaries = await extractInvoiceSummaries(bytes, sourcePages, allPairs);
   let labelsAdded = 0;
+  let summaryIndex = 0;
 
   for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
-    const boxes = labelBoxesForPage(sourcePages[pageIndex]);
+    const pairs = allPairs[pageIndex];
 
-    for (const box of boxes) {
-      if (await looksBlank(sourcePdf, pageIndex, box)) continue;
+    for (const pair of pairs) {
+      const summary = invoiceSummaries[summaryIndex] || "";
+      summaryIndex += 1;
 
-      const label = await outputPdf.embedPage(sourcePages[pageIndex], box);
+      if (await looksBlank(sourcePdf, pageIndex, pair.labelBox)) continue;
+
+      const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
       const target = getOutputSize(label.width, label.height);
       const page = outputPdf.addPage([target.width, target.height]);
+      const infoAreaHeight = includeInvoiceText.checked && pageSizeSelect.value !== "source" ? Math.min(86, target.height * 0.22) : 0;
+      const labelAreaHeight = target.height - infoAreaHeight;
       page.drawRectangle({
         x: 0,
         y: 0,
@@ -200,17 +489,19 @@ async function createCroppedPdf(file) {
 
       const scale =
         fitModeSelect.value === "cover"
-          ? Math.max(target.width / label.width, target.height / label.height)
-          : Math.min(target.width / label.width, target.height / label.height);
+          ? Math.max(target.width / label.width, labelAreaHeight / label.height)
+          : Math.min(target.width / label.width, labelAreaHeight / label.height);
       const drawWidth = label.width * scale;
       const drawHeight = label.height * scale;
 
       page.drawPage(label, {
         x: (target.width - drawWidth) / 2,
-        y: (target.height - drawHeight) / 2,
+        y: infoAreaHeight + (labelAreaHeight - drawHeight) / 2,
         width: drawWidth,
         height: drawHeight,
       });
+
+      drawInvoiceSummary(page, summary, textFont, boldFont, target, infoAreaHeight);
 
       labelsAdded += 1;
     }
@@ -275,7 +566,7 @@ dropZone.addEventListener("drop", (event) => {
   input.addEventListener("input", updateRangeLabels);
 });
 
-[cropPreset, pageSizeSelect, fitModeSelect, leftPercent, marginPercent, skipBlank].forEach((control) => {
+[cropPreset, pageSizeSelect, fitModeSelect, leftPercent, marginPercent, skipBlank, includeInvoiceText].forEach((control) => {
   control.addEventListener("change", () => {
     if (selectedFile) {
       resetOutput();

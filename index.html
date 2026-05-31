@@ -4,8 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Amazon Label Cropper</title>
-    <link rel="stylesheet" href="styles.css?v=2" />
+    <link rel="stylesheet" href="styles.css?v=3" />
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   </head>
   <body>
     <main class="app-shell">
@@ -57,6 +58,11 @@
                 </select>
               </div>
 
+              <div class="check-row">
+                <input id="includeInvoiceText" type="checkbox" checked />
+                <label for="includeInvoiceText">Add invoice description and quantity</label>
+              </div>
+
               <div class="control-row">
                 <label for="leftPercent">Left label width</label>
                 <div class="range-line">
@@ -96,6 +102,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=3"></script>
   </body>
 </html>
