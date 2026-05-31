@@ -283,6 +283,7 @@ function groupTextItemsIntoRows(items) {
 
 function cleanProductText(text) {
   return text
+    .replace(/₹/g, "Rs.")
     .replace(/\b(description|product name|product|item|qty|quantity)\b/gi, " ")
     .replace(/\b(hsn|sku|asin|unit price|net amount|tax rate|tax type|igst|cgst|sgst|total amount|amount|invoice)\b.*$/i, " ")
     .replace(/^\s*(sl\.?\s*no\.?|s\.?\s*no\.?|no\.?)?\s*\d+[\).\-\s]*/i, " ")
@@ -372,6 +373,17 @@ function summarizeInvoiceItems(items) {
   return `Product: ${product}${quantity ? ` | Qty: ${quantity}` : ""}`;
 }
 
+function makePdfTextSafe(text) {
+  return text
+    .replace(/₹/g, "Rs.")
+    .replace(/[–—]/g, "-")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function extractInvoiceSummaries(pdfBytes, sourcePages, allPairs) {
   if (!includeInvoiceText.checked) return [];
   if (!window.pdfjsLib) {
@@ -411,11 +423,12 @@ async function extractInvoiceSummaries(pdfBytes, sourcePages, allPairs) {
 function drawInvoiceSummary(page, summary, font, boldFont, target, areaHeight) {
   if (!summary || areaHeight <= 0) return;
 
+  const safeSummary = makePdfTextSafe(summary);
   const padding = 10;
   const headingSize = 8;
   const bodySize = 7.5;
   const maxChars = Math.max(28, Math.floor((target.width - padding * 2) / (bodySize * 0.48)));
-  const lines = lineWrap(summary, maxChars).slice(0, 6);
+  const lines = lineWrap(safeSummary, maxChars).slice(0, 6);
   let y = areaHeight - padding - headingSize;
 
   page.drawText("Product", {
