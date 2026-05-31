@@ -12,4 +12,4 @@ A small browser-only tool for converting Amazon shipping PDFs from two labels pe
 
 The PDF is processed inside the browser. Files are not uploaded to a server.
 
-The output can also include the matching invoice item description and quantity below each shipping label.
+The output can also paste a cropped product/quantity section from the matching invoice below each shipping label.
