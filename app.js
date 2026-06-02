@@ -232,38 +232,65 @@ function pairedBoxesForPage(page) {
   ];
 }
 
-function productDetailsBox(invoiceBox) {
+function productRowBand(invoiceBox) {
   const height = invoiceBox.top - invoiceBox.bottom;
   const start = Number(sectionStartPercent.value) / 100;
   const sectionHeight = Number(sectionHeightPercent.value) / 100;
   const bottom = invoiceBox.bottom + height * start;
   const top = Math.min(invoiceBox.top, bottom + height * sectionHeight);
-  const sideTrim = (invoiceBox.right - invoiceBox.left) * 0.02;
+
+  return { bottom, top };
+}
+
+function productDetailBoxes(invoiceBox) {
+  const width = invoiceBox.right - invoiceBox.left;
+  const band = productRowBand(invoiceBox);
 
   return {
-    left: invoiceBox.left + sideTrim,
-    right: invoiceBox.right - sideTrim,
-    bottom,
-    top,
+    description: {
+      left: invoiceBox.left + width * 0.05,
+      right: invoiceBox.left + width * 0.59,
+      bottom: band.bottom,
+      top: band.top,
+    },
+    quantity: {
+      left: invoiceBox.left + width * 0.66,
+      right: invoiceBox.left + width * 0.72,
+      bottom: band.bottom,
+      top: band.top,
+    },
   };
 }
 
 async function drawInvoiceSection(outputPdf, sourcePage, invoiceBox, targetPage, target, areaHeight) {
   if (!includeInvoiceText.checked || areaHeight <= 0) return;
 
-  const section = await outputPdf.embedPage(sourcePage, productDetailsBox(invoiceBox));
-  const padding = 4;
-  const availableWidth = target.width - padding * 2;
+  const boxes = productDetailBoxes(invoiceBox);
+  const description = await outputPdf.embedPage(sourcePage, boxes.description);
+  const quantity = await outputPdf.embedPage(sourcePage, boxes.quantity);
+  const padding = 5;
+  const gap = 5;
+  const qtyWidth = 34;
+  const descWidth = target.width - padding * 2 - gap - qtyWidth;
   const availableHeight = areaHeight - padding * 2;
-  const scale = Math.min(availableWidth / section.width, availableHeight / section.height);
-  const drawWidth = section.width * scale;
-  const drawHeight = section.height * scale;
+  const descScale = Math.min(descWidth / description.width, availableHeight / description.height);
+  const qtyScale = Math.min(qtyWidth / quantity.width, availableHeight / quantity.height);
+  const descDrawWidth = description.width * descScale;
+  const descDrawHeight = description.height * descScale;
+  const qtyDrawWidth = quantity.width * qtyScale;
+  const qtyDrawHeight = quantity.height * qtyScale;
 
-  targetPage.drawPage(section, {
-    x: (target.width - drawWidth) / 2,
-    y: padding + (availableHeight - drawHeight) / 2,
-    width: drawWidth,
-    height: drawHeight,
+  targetPage.drawPage(description, {
+    x: padding,
+    y: padding + (availableHeight - descDrawHeight) / 2,
+    width: descDrawWidth,
+    height: descDrawHeight,
+  });
+  targetPage.drawPage(quantity, {
+    x: target.width - padding - qtyDrawWidth,
+    y: padding + (availableHeight - qtyDrawHeight) / 2,
+    width: qtyDrawWidth,
+    height: qtyDrawHeight,
   });
 }
 
@@ -297,7 +324,7 @@ async function createCroppedPdf(file) {
       const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
       const target = getOutputSize(label.width, label.height);
       const page = outputPdf.addPage([target.width, target.height]);
-      const infoAreaHeight = includeInvoiceText.checked && pageSizeSelect.value !== "source" ? Math.min(72, target.height * 0.18) : 0;
+      const infoAreaHeight = includeInvoiceText.checked && pageSizeSelect.value !== "source" ? Math.min(96, target.height * 0.24) : 0;
       const labelAreaHeight = target.height - infoAreaHeight;
       page.drawRectangle({
         x: 0,

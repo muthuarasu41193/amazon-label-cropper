@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Amazon Label Cropper</title>
-    <link rel="stylesheet" href="styles.css?v=5" />
+    <link rel="stylesheet" href="styles.css?v=6" />
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   </head>
   <body>
@@ -59,22 +59,22 @@
 
               <div class="check-row">
                 <input id="includeInvoiceText" type="checkbox" checked />
-                <label for="includeInvoiceText">Add product details and quantity</label>
+                <label for="includeInvoiceText">Add only product and quantity</label>
               </div>
 
               <div class="control-row">
                 <label for="sectionStartPercent">Product row start</label>
                 <div class="range-line">
-                  <input id="sectionStartPercent" type="range" min="0" max="85" step="1" value="44" />
-                  <output id="sectionStartValue" for="sectionStartPercent">44%</output>
+                  <input id="sectionStartPercent" type="range" min="0" max="90" step="1" value="52" />
+                  <output id="sectionStartValue" for="sectionStartPercent">52%</output>
                 </div>
               </div>
 
               <div class="control-row">
                 <label for="sectionHeightPercent">Product row height</label>
                 <div class="range-line">
-                  <input id="sectionHeightPercent" type="range" min="8" max="35" step="1" value="18" />
-                  <output id="sectionHeightValue" for="sectionHeightPercent">18%</output>
+                  <input id="sectionHeightPercent" type="range" min="6" max="28" step="1" value="14" />
+                  <output id="sectionHeightValue" for="sectionHeightPercent">14%</output>
                 </div>
               </div>
 
@@ -117,6 +117,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=5"></script>
+    <script src="app.js?v=6"></script>
   </body>
 </html>
