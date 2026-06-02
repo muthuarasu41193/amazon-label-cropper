@@ -3,105 +3,98 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Amazon Label Cropper</title>
-    <link rel="stylesheet" href="styles.css?v=10" />
-    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <meta
+      name="description"
+      content="LabelForge — premium browser tools to crop Amazon, Flipkart, Meesho and other ecommerce shipping labels for thermal printers."
+    />
+    <title>LabelForge — Ecommerce Label Suite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/hub.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <section class="workbench" aria-labelledby="app-title">
-        <div class="header-row">
-          <div>
-            <p class="eyebrow">PDF label tool</p>
-            <h1 id="app-title">Amazon Label Cropper</h1>
+    <header class="site-nav site-nav--border">
+      <a class="brand-lockup" href="index.html">
+        <span class="brand-mark" aria-hidden="true">LF</span>
+        <span class="brand-name">LabelForge <span>Suite</span></span>
+      </a>
+      <div class="nav-actions">
+        <span class="chip">100% browser-side</span>
+        <span class="chip chip--live">Private · No upload</span>
+      </div>
+    </header>
+
+    <main class="hub-main">
+      <section class="hero">
+        <p class="hero__badge">Ecommerce operations toolkit</p>
+        <h1>Shipping labels, cropped perfectly — for every marketplace</h1>
+        <p class="hero__lead">
+          Turn bulky 2-label-per-page PDFs into clean 4×6 thermal prints. Amazon, Flipkart, Meesho, quick-commerce,
+          logistics partners — one premium workspace, zero server uploads.
+        </p>
+        <div class="hero__stats">
+          <div class="stat-pill">
+            <strong>15+</strong>
+            <span>Label croppers</span>
           </div>
-          <button id="downloadButton" class="download" type="button" disabled>
-            Download cropped PDF
-          </button>
-        </div>
-
-        <div class="tool-grid">
-          <div class="panel upload-panel">
-            <label class="drop-zone" for="pdfFile">
-              <input id="pdfFile" type="file" accept="application/pdf,.pdf" />
-              <span class="drop-title">Choose Amazon shipping PDF</span>
-              <span class="drop-copy">Each source page is split into the top-left and bottom-left shipping labels. Invoice sections on the right are ignored.</span>
-              <span id="fileName" class="file-name">No file selected</span>
-            </label>
-
-            <div class="controls" aria-label="Crop controls">
-              <div class="control-row">
-                <label for="cropPreset">Source layout</label>
-                <select id="cropPreset">
-                  <option value="left-half" selected>Labels on left, invoices on right</option>
-                  <option value="right-half">Labels on right, invoices on left</option>
-                  <option value="top-half">Labels on top row</option>
-                  <option value="bottom-half">Labels on bottom row</option>
-                </select>
-              </div>
-
-              <div class="control-row">
-                <label for="pageSize">Output size</label>
-                <select id="pageSize">
-                  <option value="4x6" selected>4 x 6 in thermal label</option>
-                  <option value="source">Use cropped label size</option>
-                  <option value="a6">A6 page</option>
-                </select>
-              </div>
-
-              <div class="control-row">
-                <label for="fitMode">Fit</label>
-                <select id="fitMode">
-                  <option value="contain" selected>Fit full label</option>
-                  <option value="cover">Fill page</option>
-                </select>
-              </div>
-
-              <div class="check-row">
-                <input id="includeInvoiceText" type="checkbox" checked />
-                <label for="includeInvoiceText">Add product name and quantity</label>
-              </div>
-
-              <div class="control-row">
-                <label for="leftPercent">Left label width</label>
-                <div class="range-line">
-                  <input id="leftPercent" type="range" min="40" max="60" step="0.5" value="50" />
-                  <output id="leftPercentValue" for="leftPercent">50%</output>
-                </div>
-              </div>
-
-              <div class="control-row">
-                <label for="marginPercent">Inner margin trim</label>
-                <div class="range-line">
-                  <input id="marginPercent" type="range" min="0" max="8" step="0.25" value="1" />
-                  <output id="marginPercentValue" for="marginPercent">1%</output>
-                </div>
-              </div>
-
-              <div class="check-row">
-                <input id="skipBlank" type="checkbox" checked />
-                <label for="skipBlank">Skip empty-looking labels</label>
-              </div>
-            </div>
-
-            <button id="cropButton" class="primary-button" type="button" disabled>Crop labels</button>
+          <div class="stat-pill">
+            <strong>4×6</strong>
+            <span>Thermal ready</span>
           </div>
-
-          <div class="panel result-panel">
-            <div class="status-card" aria-live="polite">
-              <span id="statusText">Waiting for a PDF.</span>
-              <span id="detailText">Upload the official Amazon 2-label-per-page file to begin.</span>
-            </div>
-            <div class="preview-frame">
-              <iframe id="pdfPreview" title="Cropped PDF preview"></iframe>
-              <div id="emptyPreview" class="empty-preview">Cropped PDF preview appears here.</div>
-            </div>
+          <div class="stat-pill">
+            <strong>₹0</strong>
+            <span>Runs offline in browser</span>
           </div>
         </div>
       </section>
+
+      <div class="trust-bar" role="list">
+        <div class="trust-item" role="listitem">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+          Files never leave your device
+        </div>
+        <div class="trust-item" role="listitem">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M3 9h18M9 21V9" />
+          </svg>
+          Invoice text → product + qty on label
+        </div>
+        <div class="trust-item" role="listitem">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+          </svg>
+          Instant PDF download
+        </div>
+      </div>
+
+      <div id="platformGrid" aria-label="Label croppers by platform"></div>
+
+      <section class="roadmap-section" aria-labelledby="roadmap-title">
+        <h2 id="roadmap-title">More tools on the roadmap</h2>
+        <p>
+          High-impact utilities for Indian ecommerce sellers — built with the same privacy-first, browser-only approach.
+          Vote for what you need most; we can prioritize next releases.
+        </p>
+        <div id="toolRoadmap"></div>
+      </section>
     </main>
 
-    <script src="app.js?v=10"></script>
+    <footer class="site-footer">
+      <p>
+        <strong>LabelForge</strong> processes PDFs entirely in your browser using pdf-lib and PDF.js. No account, no
+        cloud storage, no API keys required.
+      </p>
+      <p>© LabelForge Suite · Built for marketplace & D2C sellers in India.</p>
+    </footer>
+
+    <script type="module" src="js/hub.js"></script>
   </body>
 </html>

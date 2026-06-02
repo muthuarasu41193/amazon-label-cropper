@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Label Cropper · LabelForge</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/cropper.css" />
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  </head>
+  <body>
+    <header class="site-nav site-nav--border">
+      <a class="brand-lockup" href="index.html">
+        <span class="brand-mark" aria-hidden="true">LF</span>
+        <span class="brand-name">LabelForge</span>
+      </a>
+      <div class="nav-actions">
+        <span class="chip chip--live">Processing locally</span>
+        <a class="btn btn--ghost" href="index.html">All tools</a>
+      </div>
+    </header>
+
+    <main class="cropper-shell">
+      <a class="back-link" href="index.html">← Back to all croppers</a>
+
+      <header class="cropper-header">
+        <div class="cropper-header__left">
+          <span id="platformIcon" class="platform-badge" aria-hidden="true">A</span>
+          <div>
+            <h1 id="platformName">Label Cropper</h1>
+            <p id="platformTagline" class="cropper-header__tagline"></p>
+            <p id="layoutNote" class="layout-note"></p>
+          </div>
+        </div>
+        <button id="downloadButton" class="btn btn--primary" type="button" disabled>Download cropped PDF</button>
+      </header>
+
+      <div class="tool-grid">
+        <div class="panel upload-panel">
+          <label class="drop-zone" for="pdfFile">
+            <input id="pdfFile" type="file" accept="application/pdf,.pdf" />
+            <span class="drop-title">Drop shipping PDF here</span>
+            <span id="dropCopy" class="drop-copy"></span>
+            <span id="fileName" class="file-name">No file selected</span>
+          </label>
+
+          <div class="controls" aria-label="Crop controls">
+            <div class="control-row">
+              <label for="cropPreset">Source layout</label>
+              <select id="cropPreset">
+                <option value="left-half">Labels on left, invoices on right</option>
+                <option value="right-half">Labels on right, invoices on left</option>
+                <option value="top-half">Labels on top row</option>
+                <option value="bottom-half">Labels on bottom row</option>
+              </select>
+            </div>
+
+            <div class="control-row">
+              <label for="pageSize">Output size</label>
+              <select id="pageSize">
+                <option value="4x6" selected>4 × 6 in thermal label</option>
+                <option value="source">Use cropped label size</option>
+                <option value="a6">A6 page</option>
+              </select>
+            </div>
+
+            <div class="control-row">
+              <label for="fitMode">Fit</label>
+              <select id="fitMode">
+                <option value="contain" selected>Fit full label</option>
+                <option value="cover">Fill page</option>
+              </select>
+            </div>
+
+            <div class="check-row">
+              <input id="includeInvoiceText" type="checkbox" checked />
+              <label for="includeInvoiceText">Add product name and quantity</label>
+            </div>
+
+            <div class="control-row">
+              <label for="leftPercent">Label column width</label>
+              <div class="range-line">
+                <input id="leftPercent" type="range" min="40" max="60" step="0.5" value="50" />
+                <output id="leftPercentValue" for="leftPercent">50%</output>
+              </div>
+            </div>
+
+            <div class="control-row">
+              <label for="marginPercent">Inner margin trim</label>
+              <div class="range-line">
+                <input id="marginPercent" type="range" min="0" max="8" step="0.25" value="1" />
+                <output id="marginPercentValue" for="marginPercent">1%</output>
+              </div>
+            </div>
+
+            <div class="check-row">
+              <input id="skipBlank" type="checkbox" checked />
+              <label for="skipBlank">Skip empty-looking labels</label>
+            </div>
+          </div>
+
+          <button id="cropButton" class="btn btn--primary btn--block" type="button" disabled>Crop labels</button>
+        </div>
+
+        <div class="panel result-panel">
+          <div class="status-card" aria-live="polite">
+            <span id="statusText">Waiting for a PDF.</span>
+            <span id="detailText"></span>
+          </div>
+          <div class="preview-frame">
+            <iframe id="pdfPreview" title="Cropped PDF preview"></iframe>
+            <div id="emptyPreview" class="empty-preview">Cropped PDF preview appears here.</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <p>PDF never uploaded — cropped on your machine only.</p>
+    </footer>
+
+    <script type="module" src="js/cropper-app.js"></script>
+  </body>
+</html>
