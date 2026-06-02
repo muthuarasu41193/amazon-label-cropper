@@ -323,16 +323,45 @@ function findHeader(rows) {
   return null;
 }
 
+function fixedColumnHeader(items) {
+  if (!items.length) return null;
+
+  const xs = items.map((item) => item.x);
+  const left = Math.min(...xs);
+  const right = Math.max(...xs);
+  const width = Math.max(1, right - left);
+
+  return {
+    index: -1,
+    descriptionX: left + width * 0.03,
+    unitX: left + width * 0.60,
+    qtyX: left + width * 0.68,
+  };
+}
+
+function extractQuantityFromRowText(text) {
+  const normalized = text.replace(/₹/g, "Rs.").replace(/\s+/g, " ").trim();
+  const priceThenQty = normalized.match(/(?:Rs\.)?\s*\d[\d,.]*\s+(\d{1,3})\s+(?:Rs\.|\d[\d,.]*)/i);
+  if (priceThenQty) return priceThenQty[1];
+
+  const qtyText = normalized.match(/\b(?:qty|quantity)\D+(\d{1,3})\b/i);
+  if (qtyText) return qtyText[1];
+
+  const smallNumbers = normalized.match(/\b\d{1,3}\b/g) || [];
+  return smallNumbers.find((value) => Number(value) > 0 && Number(value) < 1000) || "";
+}
+
 function parseProductDetailsFromItems(items) {
   const rows = itemRows(items);
-  const header = findHeader(rows);
+  const header = findHeader(rows) || fixedColumnHeader(items);
   if (!header) return null;
 
   const descriptionParts = [];
   let quantity = "";
 
-  for (const row of rows.slice(header.index + 1)) {
+  for (const row of rows.slice(Math.max(0, header.index + 1))) {
     if (/\b(total|subtotal|tax|amount in words|signature|authorized)\b/i.test(row.text)) break;
+    if (/\b(order number|order date|invoice|place of supply|place of delivery)\b/i.test(row.text)) continue;
 
     const descriptionText = row.items
       .filter((item) => item.x >= header.descriptionX - 4 && item.x < header.unitX - 4)
@@ -344,9 +373,11 @@ function parseProductDetailsFromItems(items) {
     if (descriptionText && !/^\d+$/.test(descriptionText)) descriptionParts.push(descriptionText);
 
     if (!quantity && header.qtyX !== null) {
-      const qtyItem = row.items.find((item) => item.x >= header.qtyX - 8 && item.x <= header.qtyX + 35 && /^\d+$/.test(item.text.trim()));
+      const qtyItem = row.items.find((item) => item.x >= header.qtyX - 18 && item.x <= header.qtyX + 45 && /^\d{1,3}$/.test(item.text.trim()));
       if (qtyItem) quantity = qtyItem.text.trim();
     }
+
+    if (!quantity) quantity = extractQuantityFromRowText(row.text);
 
     if (descriptionParts.length >= 4 && quantity) break;
   }
@@ -355,9 +386,13 @@ function parseProductDetailsFromItems(items) {
   if (!productName && !quantity) return null;
 
   return {
-    productName: productName || "Not detected",
-    quantity: quantity || "Not detected",
+    productName,
+    quantity,
   };
+}
+
+function isDetected(details) {
+  return Boolean(details?.productName || details?.quantity);
 }
 
 async function extractProductDetails(pdfBytes, sourcePages, allPairs) {
@@ -378,7 +413,7 @@ async function extractProductDetails(pdfBytes, sourcePages, allPairs) {
       const flipped = textItemsInBox(textContent, pair.invoiceBox, pageHeight, true);
       const normalDetails = parseProductDetailsFromItems(normal);
       const flippedDetails = parseProductDetailsFromItems(flipped);
-      details.push(normalDetails || flippedDetails || { productName: "Not detected", quantity: "Not detected" });
+      details.push(normalDetails || flippedDetails || null);
     }
   }
 
@@ -387,7 +422,7 @@ async function extractProductDetails(pdfBytes, sourcePages, allPairs) {
 }
 
 function drawProductDetails(page, details, font, boldFont, target, areaHeight) {
-  if (!details || areaHeight <= 0) return;
+  if (!isDetected(details) || areaHeight <= 0) return;
 
   const padding = 9;
   const labelSize = 8;
@@ -398,7 +433,7 @@ function drawProductDetails(page, details, font, boldFont, target, areaHeight) {
   page.drawText("Product Name -", { x: padding, y, size: labelSize, font: boldFont, color: rgb(0, 0, 0) });
   y -= 10;
 
-  const productLines = wrapText(details.productName, font, bodySize, maxWidth).slice(0, 4);
+  const productLines = wrapText(details.productName || "Not detected", font, bodySize, maxWidth).slice(0, 4);
   for (const line of productLines) {
     if (y < 18) break;
     page.drawText(line, { x: padding, y, size: bodySize, font, color: rgb(0, 0, 0) });
@@ -406,7 +441,7 @@ function drawProductDetails(page, details, font, boldFont, target, areaHeight) {
   }
 
   if (y >= 8) {
-    page.drawText(`Quantity - ${makePdfTextSafe(details.quantity)}`, {
+    page.drawText(`Quantity - ${makePdfTextSafe(details.quantity || "Not detected")}`, {
       x: padding,
       y,
       size: labelSize,
@@ -448,6 +483,7 @@ async function createCroppedPdf(file) {
       const details = productDetails[detailsIndex] || null;
       detailsIndex += 1;
 
+      if (includeInvoiceText.checked && !isDetected(details)) continue;
       if (await looksBlank(sourcePdf, pageIndex, pair.labelBox)) continue;
 
       const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
