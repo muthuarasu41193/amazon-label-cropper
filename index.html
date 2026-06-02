@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Amazon Label Cropper</title>
-    <link rel="stylesheet" href="styles.css?v=4" />
+    <link rel="stylesheet" href="styles.css?v=5" />
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   </head>
   <body>
@@ -59,22 +59,22 @@
 
               <div class="check-row">
                 <input id="includeInvoiceText" type="checkbox" checked />
-                <label for="includeInvoiceText">Paste invoice product section</label>
+                <label for="includeInvoiceText">Add product details and quantity</label>
               </div>
 
               <div class="control-row">
-                <label for="sectionStartPercent">Invoice section start</label>
+                <label for="sectionStartPercent">Product row start</label>
                 <div class="range-line">
-                  <input id="sectionStartPercent" type="range" min="0" max="75" step="1" value="32" />
-                  <output id="sectionStartValue" for="sectionStartPercent">32%</output>
+                  <input id="sectionStartPercent" type="range" min="0" max="85" step="1" value="44" />
+                  <output id="sectionStartValue" for="sectionStartPercent">44%</output>
                 </div>
               </div>
 
               <div class="control-row">
-                <label for="sectionHeightPercent">Invoice section height</label>
+                <label for="sectionHeightPercent">Product row height</label>
                 <div class="range-line">
-                  <input id="sectionHeightPercent" type="range" min="12" max="60" step="1" value="34" />
-                  <output id="sectionHeightValue" for="sectionHeightPercent">34%</output>
+                  <input id="sectionHeightPercent" type="range" min="8" max="35" step="1" value="18" />
+                  <output id="sectionHeightValue" for="sectionHeightPercent">18%</output>
                 </div>
               </div>
 
@@ -117,6 +117,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=5"></script>
   </body>
 </html>
