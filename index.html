@@ -4,8 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Amazon Label Cropper</title>
-    <link rel="stylesheet" href="styles.css?v=7" />
+    <link rel="stylesheet" href="styles.css?v=8" />
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   </head>
   <body>
     <main class="app-shell">
@@ -59,23 +60,7 @@
 
               <div class="check-row">
                 <input id="includeInvoiceText" type="checkbox" checked />
-                <label for="includeInvoiceText">Add only product and quantity</label>
-              </div>
-
-              <div class="control-row">
-                <label for="sectionStartPercent">Product row start</label>
-                <div class="range-line">
-                  <input id="sectionStartPercent" type="range" min="0" max="90" step="1" value="42" />
-                  <output id="sectionStartValue" for="sectionStartPercent">42%</output>
-                </div>
-              </div>
-
-              <div class="control-row">
-                <label for="sectionHeightPercent">Product row height</label>
-                <div class="range-line">
-                  <input id="sectionHeightPercent" type="range" min="6" max="28" step="1" value="16" />
-                  <output id="sectionHeightValue" for="sectionHeightPercent">16%</output>
-                </div>
+                <label for="includeInvoiceText">Add product name and quantity</label>
               </div>
 
               <div class="control-row">
@@ -117,6 +102,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=7"></script>
+    <script src="app.js?v=8"></script>
   </body>
 </html>

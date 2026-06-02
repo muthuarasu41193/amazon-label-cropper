@@ -1,4 +1,9 @@
-const { PDFDocument, rgb } = PDFLib;
+const { PDFDocument, StandardFonts, rgb } = PDFLib;
+
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
 
 const fileInput = document.getElementById("pdfFile");
 const dropZone = document.querySelector(".drop-zone");
@@ -18,10 +23,6 @@ const leftPercentValue = document.getElementById("leftPercentValue");
 const marginPercentValue = document.getElementById("marginPercentValue");
 const skipBlank = document.getElementById("skipBlank");
 const includeInvoiceText = document.getElementById("includeInvoiceText");
-const sectionStartPercent = document.getElementById("sectionStartPercent");
-const sectionHeightPercent = document.getElementById("sectionHeightPercent");
-const sectionStartValue = document.getElementById("sectionStartValue");
-const sectionHeightValue = document.getElementById("sectionHeightValue");
 
 let selectedFile = null;
 let previewUrl = null;
@@ -57,8 +58,6 @@ function resetOutput() {
 function updateRangeLabels() {
   leftPercentValue.textContent = `${Number(leftPercent.value).toFixed(1).replace(".0", "")}%`;
   marginPercentValue.textContent = `${Number(marginPercent.value).toFixed(2).replace(/\.?0+$/, "")}%`;
-  sectionStartValue.textContent = `${sectionStartPercent.value}%`;
-  sectionHeightValue.textContent = `${sectionHeightPercent.value}%`;
 }
 
 function selectFile(file) {
@@ -232,66 +231,189 @@ function pairedBoxesForPage(page) {
   ];
 }
 
-function productRowBand(invoiceBox) {
-  const height = invoiceBox.top - invoiceBox.bottom;
-  const start = Number(sectionStartPercent.value) / 100;
-  const sectionHeight = Number(sectionHeightPercent.value) / 100;
-  const top = invoiceBox.top - height * start;
-  const bottom = Math.max(invoiceBox.bottom, top - height * sectionHeight);
-
-  return { bottom, top };
+function makePdfTextSafe(text) {
+  return text
+    .replace(/₹/g, "Rs.")
+    .replace(/[–—]/g, "-")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function productDetailBoxes(invoiceBox) {
-  const width = invoiceBox.right - invoiceBox.left;
-  const band = productRowBand(invoiceBox);
+function wrapText(text, font, size, maxWidth) {
+  const words = makePdfTextSafe(text).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = "";
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (font.widthOfTextAtSize(next, size) > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines;
+}
+
+function itemRows(items) {
+  const rows = [];
+  const sorted = [...items].sort((a, b) => {
+    if (Math.abs(a.y - b.y) > 3) return b.y - a.y;
+    return a.x - b.x;
+  });
+
+  for (const item of sorted) {
+    const row = rows.find((candidate) => Math.abs(candidate.y - item.y) <= 3);
+    if (row) {
+      row.items.push(item);
+      row.y = (row.y + item.y) / 2;
+    } else {
+      rows.push({ y: item.y, items: [item] });
+    }
+  }
+
+  return rows
+    .map((row) => {
+      const rowItems = row.items.sort((a, b) => a.x - b.x);
+      return {
+        y: row.y,
+        items: rowItems,
+        text: rowItems.map((item) => item.text).join(" ").replace(/\s+/g, " ").trim(),
+      };
+    })
+    .filter((row) => row.text);
+}
+
+function textItemsInBox(textContent, box, pageHeight, flipY) {
+  return textContent.items
+    .map((item) => {
+      const rawY = item.transform[5];
+      return {
+        text: item.str,
+        x: item.transform[4],
+        y: flipY ? pageHeight - rawY : rawY,
+      };
+    })
+    .filter((item) => item.x >= box.left && item.x <= box.right && item.y >= box.bottom && item.y <= box.top);
+}
+
+function findHeader(rows) {
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    const description = row.items.find((item) => /description/i.test(item.text));
+    const qty = row.items.find((item) => /^qty$/i.test(item.text) || /quantity/i.test(item.text));
+    const unit = row.items.find((item) => /unit\s*price/i.test(item.text) || /^unit$/i.test(item.text));
+
+    if (description && (qty || unit)) {
+      return {
+        index: i,
+        descriptionX: description.x,
+        unitX: unit?.x ?? qty?.x ?? description.x + 220,
+        qtyX: qty?.x ?? null,
+      };
+    }
+  }
+
+  return null;
+}
+
+function parseProductDetailsFromItems(items) {
+  const rows = itemRows(items);
+  const header = findHeader(rows);
+  if (!header) return null;
+
+  const descriptionParts = [];
+  let quantity = "";
+
+  for (const row of rows.slice(header.index + 1)) {
+    if (/\b(total|subtotal|tax|amount in words|signature|authorized)\b/i.test(row.text)) break;
+
+    const descriptionText = row.items
+      .filter((item) => item.x >= header.descriptionX - 4 && item.x < header.unitX - 4)
+      .map((item) => item.text)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (descriptionText && !/^\d+$/.test(descriptionText)) descriptionParts.push(descriptionText);
+
+    if (!quantity && header.qtyX !== null) {
+      const qtyItem = row.items.find((item) => item.x >= header.qtyX - 8 && item.x <= header.qtyX + 35 && /^\d+$/.test(item.text.trim()));
+      if (qtyItem) quantity = qtyItem.text.trim();
+    }
+
+    if (descriptionParts.length >= 4 && quantity) break;
+  }
+
+  const productName = descriptionParts.join(" ").replace(/\s+/g, " ").trim();
+  if (!productName && !quantity) return null;
 
   return {
-    description: {
-      left: invoiceBox.left + width * 0.05,
-      right: invoiceBox.left + width * 0.59,
-      bottom: band.bottom,
-      top: band.top,
-    },
-    quantity: {
-      left: invoiceBox.left + width * 0.66,
-      right: invoiceBox.left + width * 0.72,
-      bottom: band.bottom,
-      top: band.top,
-    },
+    productName: productName || "Not detected",
+    quantity: quantity || "Not detected",
   };
 }
 
-async function drawInvoiceSection(outputPdf, sourcePage, invoiceBox, targetPage, target, areaHeight) {
-  if (!includeInvoiceText.checked || areaHeight <= 0) return;
+async function extractProductDetails(pdfBytes, sourcePages, allPairs) {
+  if (!includeInvoiceText.checked) return [];
+  if (!window.pdfjsLib) throw new Error("PDF text reader did not load. Refresh and try again.");
 
-  const boxes = productDetailBoxes(invoiceBox);
-  const description = await outputPdf.embedPage(sourcePage, boxes.description);
-  const quantity = await outputPdf.embedPage(sourcePage, boxes.quantity);
-  const padding = 5;
-  const gap = 5;
-  const qtyWidth = 34;
-  const descWidth = target.width - padding * 2 - gap - qtyWidth;
-  const availableHeight = areaHeight - padding * 2;
-  const descScale = Math.min(descWidth / description.width, availableHeight / description.height);
-  const qtyScale = Math.min(qtyWidth / quantity.width, availableHeight / quantity.height);
-  const descDrawWidth = description.width * descScale;
-  const descDrawHeight = description.height * descScale;
-  const qtyDrawWidth = quantity.width * qtyScale;
-  const qtyDrawHeight = quantity.height * qtyScale;
+  const loadingTask = pdfjsLib.getDocument({ data: pdfBytes.slice(0) });
+  const pdf = await loadingTask.promise;
+  const details = [];
 
-  targetPage.drawPage(description, {
-    x: padding,
-    y: padding + (availableHeight - descDrawHeight) / 2,
-    width: descDrawWidth,
-    height: descDrawHeight,
-  });
-  targetPage.drawPage(quantity, {
-    x: target.width - padding - qtyDrawWidth,
-    y: padding + (availableHeight - qtyDrawHeight) / 2,
-    width: qtyDrawWidth,
-    height: qtyDrawHeight,
-  });
+  for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
+    const pdfPage = await pdf.getPage(pageIndex + 1);
+    const textContent = await pdfPage.getTextContent();
+    const pageHeight = sourcePages[pageIndex].getSize().height;
+
+    for (const pair of allPairs[pageIndex]) {
+      const normal = textItemsInBox(textContent, pair.invoiceBox, pageHeight, false);
+      const flipped = textItemsInBox(textContent, pair.invoiceBox, pageHeight, true);
+      const normalDetails = parseProductDetailsFromItems(normal);
+      const flippedDetails = parseProductDetailsFromItems(flipped);
+      details.push(normalDetails || flippedDetails || { productName: "Not detected", quantity: "Not detected" });
+    }
+  }
+
+  await loadingTask.destroy();
+  return details;
+}
+
+function drawProductDetails(page, details, font, boldFont, target, areaHeight) {
+  if (!details || areaHeight <= 0) return;
+
+  const padding = 9;
+  const labelSize = 8;
+  const bodySize = 8.5;
+  const maxWidth = target.width - padding * 2;
+  let y = areaHeight - padding - labelSize;
+
+  page.drawText("Product Name -", { x: padding, y, size: labelSize, font: boldFont, color: rgb(0, 0, 0) });
+  y -= 10;
+
+  const productLines = wrapText(details.productName, font, bodySize, maxWidth).slice(0, 4);
+  for (const line of productLines) {
+    if (y < 18) break;
+    page.drawText(line, { x: padding, y, size: bodySize, font, color: rgb(0, 0, 0) });
+    y -= 9.5;
+  }
+
+  if (y >= 8) {
+    page.drawText(`Quantity - ${makePdfTextSafe(details.quantity)}`, {
+      x: padding,
+      y,
+      size: labelSize,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    });
+  }
 }
 
 async function looksBlank(sourcePdf, pageIndex, box) {
@@ -311,20 +433,27 @@ async function createCroppedPdf(file) {
   const bytes = await file.arrayBuffer();
   const sourcePdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const outputPdf = await PDFDocument.create();
+  const textFont = await outputPdf.embedFont(StandardFonts.Helvetica);
+  const boldFont = await outputPdf.embedFont(StandardFonts.HelveticaBold);
   const sourcePages = sourcePdf.getPages();
   const allPairs = sourcePages.map((page) => pairedBoxesForPage(page));
+  const productDetails = await extractProductDetails(bytes, sourcePages, allPairs);
   let labelsAdded = 0;
+  let detailsIndex = 0;
 
   for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
     const pairs = allPairs[pageIndex];
 
     for (const pair of pairs) {
+      const details = productDetails[detailsIndex] || null;
+      detailsIndex += 1;
+
       if (await looksBlank(sourcePdf, pageIndex, pair.labelBox)) continue;
 
       const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
       const target = getOutputSize(label.width, label.height);
       const page = outputPdf.addPage([target.width, target.height]);
-      const infoAreaHeight = includeInvoiceText.checked && pageSizeSelect.value !== "source" ? Math.min(96, target.height * 0.24) : 0;
+      const infoAreaHeight = includeInvoiceText.checked && pageSizeSelect.value !== "source" ? Math.min(104, target.height * 0.25) : 0;
       const labelAreaHeight = target.height - infoAreaHeight;
       page.drawRectangle({
         x: 0,
@@ -348,7 +477,7 @@ async function createCroppedPdf(file) {
         height: drawHeight,
       });
 
-      await drawInvoiceSection(outputPdf, sourcePages[pageIndex], pair.invoiceBox, page, target, infoAreaHeight);
+      drawProductDetails(page, details, textFont, boldFont, target, infoAreaHeight);
 
       labelsAdded += 1;
     }
@@ -409,11 +538,11 @@ dropZone.addEventListener("drop", (event) => {
   selectFile(event.dataTransfer.files?.[0]);
 });
 
-[leftPercent, marginPercent, sectionStartPercent, sectionHeightPercent].forEach((input) => {
+[leftPercent, marginPercent].forEach((input) => {
   input.addEventListener("input", updateRangeLabels);
 });
 
-[cropPreset, pageSizeSelect, fitModeSelect, leftPercent, marginPercent, sectionStartPercent, sectionHeightPercent, skipBlank, includeInvoiceText].forEach((control) => {
+[cropPreset, pageSizeSelect, fitModeSelect, leftPercent, marginPercent, skipBlank, includeInvoiceText].forEach((control) => {
   control.addEventListener("change", () => {
     if (selectedFile) {
       resetOutput();
