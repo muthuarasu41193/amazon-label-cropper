@@ -236,8 +236,8 @@ function productRowBand(invoiceBox) {
   const height = invoiceBox.top - invoiceBox.bottom;
   const start = Number(sectionStartPercent.value) / 100;
   const sectionHeight = Number(sectionHeightPercent.value) / 100;
-  const bottom = invoiceBox.bottom + height * start;
-  const top = Math.min(invoiceBox.top, bottom + height * sectionHeight);
+  const top = invoiceBox.top - height * start;
+  const bottom = Math.max(invoiceBox.bottom, top - height * sectionHeight);
 
   return { bottom, top };
 }
