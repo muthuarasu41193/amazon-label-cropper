@@ -9,6 +9,17 @@ A premium, browser-only toolkit for Indian ecommerce sellers. Crop multi-label s
 - **Product name + quantity** pulled from invoice column (where supported)
 - **100% client-side** — no server, no account, no upload
 
+## Live hosting (Cloudflare Pages)
+
+This project is meant for **Cloudflare Pages** with GitHub connected (no build step). See **[DEPLOY-CLOUDFLARE.md](./DEPLOY-CLOUDFLARE.md)** for dashboard settings, custom domains, and cache troubleshooting.
+
+**Canonical URLs** (replace with your `*.pages.dev` or custom domain):
+
+- Hub: `https://<your-domain>/`
+- Amazon: `https://<your-domain>/cropper.html?p=amazon`
+
+GitHub Pages (`*.github.io/amazon-label-cropper`) also works but use **one** host only to avoid confusion and stale cache.
+
 ## Run locally
 
 ```bash

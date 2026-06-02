@@ -1,0 +1,4 @@
+# Cloudflare Pages — static site, no build step
+# https://developers.cloudflare.com/pages/configuration/wrangler-configuration/
+name = "amazon-label-cropper"
+pages_build_output_dir = "."
