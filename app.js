@@ -368,9 +368,13 @@ function parseProductDetailsFromItems(items) {
       .map((item) => item.text)
       .join(" ")
       .replace(/\s+/g, " ")
+      .replace(/\bHSN\b.*$/i, "")
+      .replace(/\bHSN\s*Code\b.*$/i, "")
       .trim();
 
-    if (descriptionText && !/^\d+$/.test(descriptionText)) descriptionParts.push(descriptionText);
+    if (descriptionText && !/^\d+$/.test(descriptionText) && !/^hsn\b/i.test(descriptionText)) {
+      descriptionParts.push(descriptionText);
+    }
 
     if (!quantity && header.qtyX !== null) {
       const qtyItem = row.items.find((item) => item.x >= header.qtyX - 18 && item.x <= header.qtyX + 45 && /^\d{1,3}$/.test(item.text.trim()));
@@ -379,10 +383,14 @@ function parseProductDetailsFromItems(items) {
 
     if (!quantity) quantity = extractQuantityFromRowText(row.text);
 
-    if (descriptionParts.length >= 4 && quantity) break;
+    if (descriptionParts.length >= 10 && quantity) break;
   }
 
-  const productName = descriptionParts.join(" ").replace(/\s+/g, " ").trim();
+  const productName = descriptionParts
+    .join(" ")
+    .replace(/\bHSN\b.*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!productName && !quantity) return null;
 
   return {
@@ -426,18 +434,18 @@ function drawProductDetails(page, details, font, boldFont, target, areaHeight) {
 
   const padding = 9;
   const labelSize = 8;
-  const bodySize = 8.5;
+  const bodySize = 7.2;
   const maxWidth = target.width - padding * 2;
   let y = areaHeight - padding - labelSize;
 
   page.drawText("Product Name -", { x: padding, y, size: labelSize, font: boldFont, color: rgb(0, 0, 0) });
   y -= 10;
 
-  const productLines = wrapText(details.productName || "Not detected", font, bodySize, maxWidth).slice(0, 4);
+  const productLines = wrapText(details.productName || "Not detected", font, bodySize, maxWidth).slice(0, 8);
   for (const line of productLines) {
-    if (y < 18) break;
+    if (y < 16) break;
     page.drawText(line, { x: padding, y, size: bodySize, font, color: rgb(0, 0, 0) });
-    y -= 9.5;
+    y -= 8;
   }
 
   if (y >= 8) {
@@ -489,7 +497,7 @@ async function createCroppedPdf(file) {
       const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
       const target = getOutputSize(label.width, label.height);
       const page = outputPdf.addPage([target.width, target.height]);
-      const infoAreaHeight = includeInvoiceText.checked && pageSizeSelect.value !== "source" ? Math.min(104, target.height * 0.25) : 0;
+      const infoAreaHeight = includeInvoiceText.checked && pageSizeSelect.value !== "source" ? Math.min(132, target.height * 0.31) : 0;
       const labelAreaHeight = target.height - infoAreaHeight;
       page.drawRectangle({
         x: 0,
