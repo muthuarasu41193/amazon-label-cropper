@@ -1,14 +1,8 @@
 {
-  "version": 2,
-  "buildCommand": null,
-  "outputDirectory": ".",
-  "framework": null,
-  "cleanUrls": false,
-  "trailingSlash": false,
   "redirects": [
     {
       "source": "/cropper.html",
-      "destination": "/crop.html",
+      "destination": "/crop",
       "permanent": false
     }
   ],

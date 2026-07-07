@@ -84,7 +84,7 @@ export default function CropPage() {
 
     try {
       const { outputBytes, pageCount, labelsAdded } = await createCroppedPdf(selectedFile, settings);
-      const blob = new Blob([outputBytes], { type: "application/pdf" });
+      const blob = new Blob([Uint8Array.from(outputBytes)], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       setCroppedBlob(blob);
       setPreviewUrl(url);
