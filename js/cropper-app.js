@@ -26,6 +26,8 @@ const els = {
   emptyPreview: document.getElementById("emptyPreview"),
   statusText: document.getElementById("statusText"),
   detailText: document.getElementById("detailText"),
+  progressBar: document.getElementById("progressBar"),
+  progressWrap: document.getElementById("progressWrap"),
   cropPreset: document.getElementById("cropPreset"),
   pageSizeSelect: document.getElementById("pageSize"),
   fitModeSelect: document.getElementById("fitMode"),
@@ -35,6 +37,8 @@ const els = {
   marginPercentValue: document.getElementById("marginPercentValue"),
   skipBlank: document.getElementById("skipBlank"),
   includeInvoiceText: document.getElementById("includeInvoiceText"),
+  smartScan: document.getElementById("smartScan"),
+  manualControls: document.getElementById("manualControls"),
 };
 
 els.platformName.textContent = `${platform.name} Label Cropper`;
@@ -50,6 +54,7 @@ els.leftPercent.value = String(d.leftPercent);
 els.marginPercent.value = String(d.marginPercent);
 els.includeInvoiceText.checked = d.includeInvoiceText;
 els.skipBlank.checked = d.skipBlank;
+els.smartScan.checked = d.smartScan ?? true;
 
 let selectedFile = null;
 let previewUrl = null;
@@ -60,6 +65,19 @@ function setStatus(title, detail, isError = false) {
   els.statusText.textContent = title;
   els.detailText.textContent = detail;
   els.statusText.classList.toggle("is-error", isError);
+}
+
+function setProgress(percent, visible = true) {
+  els.progressWrap.classList.toggle("is-active", visible && percent < 100);
+  els.progressBar.style.width = `${percent}%`;
+}
+
+function updateManualControlsVisibility() {
+  const manual = !els.smartScan.checked;
+  els.manualControls.classList.toggle("is-collapsed", !manual);
+  els.cropPreset.disabled = !manual;
+  els.leftPercent.disabled = !manual;
+  els.marginPercent.disabled = !manual;
 }
 
 function revokePreview() {
@@ -75,6 +93,7 @@ function resetOutput() {
   els.pdfPreview.removeAttribute("src");
   els.emptyPreview.parentElement.classList.remove("has-preview");
   els.downloadButton.disabled = true;
+  setProgress(0, false);
 }
 
 function updateRangeLabels() {
@@ -91,6 +110,7 @@ function readSettings() {
     fitMode: els.fitModeSelect.value,
     skipBlank: els.skipBlank.checked,
     includeInvoiceText: els.includeInvoiceText.checked,
+    smartScan: els.smartScan.checked,
   };
 }
 
@@ -123,10 +143,30 @@ async function cropSelectedPdf() {
 
   els.cropButton.disabled = true;
   els.downloadButton.disabled = true;
-  setStatus("Cropping labels...", "Processing entirely in your browser — nothing is uploaded.");
+  els.cropButton.classList.add("is-loading");
+  setProgress(2, true);
+  setStatus("Scanning for labels…", "Analyzing each page for shipping label regions.");
 
   try {
-    const { outputBytes, pageCount, labelsAdded } = await createCroppedPdf(selectedFile, readSettings());
+    const { outputBytes, pageCount, labelsAdded, skippedBlank } = await createCroppedPdf(
+      selectedFile,
+      readSettings(),
+      (progress) => {
+        setProgress(progress.percent, true);
+        if (progress.phase === "scanning") {
+          setStatus(
+            "Scanning for labels…",
+            progress.page ? `Page ${progress.page} of ${progress.total}` : "Detecting label regions on each page.",
+          );
+        } else if (progress.phase === "cropping") {
+          setStatus(
+            "Cropping labels…",
+            progress.page ? `Processing page ${progress.page} of ${progress.total}` : "Building output PDF.",
+          );
+        }
+      },
+    );
+
     croppedBlob = new Blob([outputBytes], { type: "application/pdf" });
     revokePreview();
     previewUrl = URL.createObjectURL(croppedBlob);
@@ -134,12 +174,16 @@ async function cropSelectedPdf() {
     els.emptyPreview.parentElement.classList.add("has-preview");
     downloadName = selectedFile.name.replace(/\.pdf$/i, "") + `-${platform.id}-labels.pdf`;
     els.downloadButton.disabled = false;
-    setStatus("Cropped PDF ready", `${labelsAdded} labels from ${pageCount} source pages.`);
+
+    const skipNote = skippedBlank > 0 ? ` (${skippedBlank} empty regions skipped)` : "";
+    setStatus("Cropped PDF ready", `${labelsAdded} label${labelsAdded === 1 ? "" : "s"} from ${pageCount} source page${pageCount === 1 ? "" : "s"}${skipNote}.`);
+    setProgress(100, false);
   } catch (error) {
     resetOutput();
     setStatus("Could not crop this PDF", error.message || "Check the file and settings, then try again.", true);
   } finally {
     els.cropButton.disabled = !selectedFile;
+    els.cropButton.classList.remove("is-loading");
   }
 }
 
@@ -167,16 +211,31 @@ els.dropZone.addEventListener("drop", (event) => {
   input.addEventListener("input", updateRangeLabels);
 });
 
-[els.cropPreset, els.pageSizeSelect, els.fitModeSelect, els.leftPercent, els.marginPercent, els.skipBlank, els.includeInvoiceText].forEach(
-  (control) => {
-    control.addEventListener("change", () => {
-      if (selectedFile) {
-        resetOutput();
-        setStatus("Settings changed", "Crop again to generate an updated PDF.");
-      }
-    });
-  },
-);
+els.smartScan.addEventListener("change", () => {
+  updateManualControlsVisibility();
+  if (selectedFile) {
+    resetOutput();
+    setStatus("Settings changed", "Crop again to generate an updated PDF.");
+  }
+});
+
+[
+  els.cropPreset,
+  els.pageSizeSelect,
+  els.fitModeSelect,
+  els.leftPercent,
+  els.marginPercent,
+  els.skipBlank,
+  els.includeInvoiceText,
+  els.smartScan,
+].forEach((control) => {
+  control.addEventListener("change", () => {
+    if (selectedFile) {
+      resetOutput();
+      setStatus("Settings changed", "Crop again to generate an updated PDF.");
+    }
+  });
+});
 
 els.cropButton.addEventListener("click", cropSelectedPdf);
 els.downloadButton.addEventListener("click", () => {
@@ -193,4 +252,5 @@ els.downloadButton.addEventListener("click", () => {
 });
 
 updateRangeLabels();
+updateManualControlsVisibility();
 setStatus("Waiting for a PDF.", platform.uploadHint);

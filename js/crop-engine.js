@@ -1,3 +1,5 @@
+import { scanPageForLabels, regionHasContent } from "./label-scanner.js";
+
 const { PDFDocument, StandardFonts, rgb } = PDFLib;
 
 const PAGE_SIZES = {
@@ -12,7 +14,7 @@ function getOutputSize(cropWidth, cropHeight, pageSize) {
   return PAGE_SIZES[pageSize];
 }
 
-function pairedBoxesForPage(page, settings) {
+export function pairedBoxesForPage(page, settings) {
   const { width, height } = page.getSize();
   const leftWidth = width * (Number(settings.leftPercent) / 100);
   const rightStart = width - leftWidth;
@@ -323,30 +325,59 @@ function isDetected(details) {
   return Boolean(details?.productName || details?.quantity);
 }
 
-async function extractProductDetails(pdfBytes, sourcePages, allPairs, settings) {
-  if (!settings.includeInvoiceText) return [];
-  if (!window.pdfjsLib) throw new Error("PDF text reader did not load. Refresh and try again.");
+function parseInvoiceDetails(textContent, invoiceBox, pageHeight) {
+  const normal = textItemsInBox(textContent, invoiceBox, pageHeight, false);
+  const flipped = textItemsInBox(textContent, invoiceBox, pageHeight, true);
+  return parseProductDetailsFromItems(normal) || parseProductDetailsFromItems(flipped) || null;
+}
 
-  const loadingTask = pdfjsLib.getDocument({ data: pdfBytes.slice(0) });
-  const pdf = await loadingTask.promise;
-  const details = [];
+async function resolvePagePairs(sourcePages, settings, pdfJsDoc, onProgress) {
+  const allPairs = [];
 
   for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
-    const pdfPage = await pdf.getPage(pageIndex + 1);
-    const textContent = await pdfPage.getTextContent();
-    const pageHeight = sourcePages[pageIndex].getSize().height;
+    const page = sourcePages[pageIndex];
+    const { width, height } = page.getSize();
 
-    for (const pair of allPairs[pageIndex]) {
-      const normal = textItemsInBox(textContent, pair.invoiceBox, pageHeight, false);
-      const flipped = textItemsInBox(textContent, pair.invoiceBox, pageHeight, true);
-      const normalDetails = parseProductDetailsFromItems(normal);
-      const flippedDetails = parseProductDetailsFromItems(flipped);
-      details.push(normalDetails || flippedDetails || null);
+    onProgress?.({
+      phase: "scanning",
+      page: pageIndex + 1,
+      total: sourcePages.length,
+      percent: Math.round(((pageIndex + 0.5) / sourcePages.length) * 60),
+    });
+
+    if (settings.smartScan && pdfJsDoc) {
+      const pdfPage = await pdfJsDoc.getPage(pageIndex + 1);
+      const textContent = await pdfPage.getTextContent();
+      const detected = await scanPageForLabels(pdfPage, width, height, textContent, settings);
+
+      if (detected.length > 0) {
+        allPairs.push(detected);
+        continue;
+      }
     }
+
+    allPairs.push(pairedBoxesForPage(page, settings));
   }
 
-  await loadingTask.destroy();
-  return details;
+  return allPairs;
+}
+
+async function isLabelBlank(sourcePdf, pdfJsDoc, pageIndex, box, settings, pageWidth, pageHeight) {
+  if (!settings.skipBlank) return false;
+
+  if (pdfJsDoc && settings.smartScan) {
+    const pdfPage = await pdfJsDoc.getPage(pageIndex + 1);
+    const hasContent = await regionHasContent(pdfPage, box, pageWidth, pageHeight);
+    return !hasContent;
+  }
+
+  const probePdf = await PDFDocument.create();
+  const embedded = await probePdf.embedPage(sourcePdf.getPages()[pageIndex], box);
+  const page = probePdf.addPage([embedded.width, embedded.height]);
+  page.drawPage(embedded, { x: 0, y: 0 });
+  const bytes = await probePdf.save({ useObjectStreams: false });
+
+  return bytes.length < 1200;
 }
 
 function drawProductDetails(page, details, font, boldFont, target, areaHeight) {
@@ -379,43 +410,55 @@ function drawProductDetails(page, details, font, boldFont, target, areaHeight) {
   }
 }
 
-async function looksBlank(sourcePdf, pageIndex, box, settings) {
-  if (!settings.skipBlank) return false;
-
-  const probePdf = await PDFDocument.create();
-  const embedded = await probePdf.embedPage(sourcePdf.getPages()[pageIndex], box);
-  const page = probePdf.addPage([embedded.width, embedded.height]);
-  page.drawPage(embedded, { x: 0, y: 0 });
-  const bytes = await probePdf.save({ useObjectStreams: false });
-
-  return bytes.length < 1400;
-}
-
 /**
  * @param {File} file
- * @param {{ cropPreset: string, leftPercent: number, marginPercent: number, pageSize: string, fitMode: string, skipBlank: boolean, includeInvoiceText: boolean }} settings
+ * @param {{ cropPreset: string, leftPercent: number, marginPercent: number, pageSize: string, fitMode: string, skipBlank: boolean, includeInvoiceText: boolean, smartScan: boolean }} settings
+ * @param {(progress: { phase: string, percent: number, page?: number, total?: number }) => void} [onProgress]
  */
-export async function createCroppedPdf(file, settings) {
+export async function createCroppedPdf(file, settings, onProgress) {
   const bytes = await file.arrayBuffer();
+  onProgress?.({ phase: "loading", percent: 5 });
+
   const sourcePdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const outputPdf = await PDFDocument.create();
   const textFont = await outputPdf.embedFont(StandardFonts.Helvetica);
   const boldFont = await outputPdf.embedFont(StandardFonts.HelveticaBold);
   const sourcePages = sourcePdf.getPages();
-  const allPairs = sourcePages.map((page) => pairedBoxesForPage(page, settings));
-  const productDetails = await extractProductDetails(bytes, sourcePages, allPairs, settings);
+
+  let pdfJsDoc = null;
+  if (settings.smartScan || settings.includeInvoiceText) {
+    if (!window.pdfjsLib) throw new Error("PDF reader did not load. Refresh and try again.");
+    pdfJsDoc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+  }
+
+  onProgress?.({ phase: "scanning", percent: 10 });
+  const allPairs = await resolvePagePairs(sourcePages, settings, pdfJsDoc, onProgress);
+
+  onProgress?.({ phase: "cropping", percent: 65 });
   let labelsAdded = 0;
-  let detailsIndex = 0;
+  let skippedBlank = 0;
 
   for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
+    const page = sourcePages[pageIndex];
+    const { width, height } = page.getSize();
     const pairs = allPairs[pageIndex];
 
-    for (const pair of pairs) {
-      const details = productDetails[detailsIndex] || null;
-      detailsIndex += 1;
+    let textContent = null;
+    if (settings.includeInvoiceText && pdfJsDoc) {
+      const pdfPage = await pdfJsDoc.getPage(pageIndex + 1);
+      textContent = await pdfPage.getTextContent();
+    }
 
-      if (settings.includeInvoiceText && !isDetected(details)) continue;
-      if (await looksBlank(sourcePdf, pageIndex, pair.labelBox, settings)) continue;
+    for (const pair of pairs) {
+      const details =
+        settings.includeInvoiceText && textContent
+          ? parseInvoiceDetails(textContent, pair.invoiceBox, height)
+          : null;
+
+      if (await isLabelBlank(sourcePdf, pdfJsDoc, pageIndex, pair.labelBox, settings, width, height)) {
+        skippedBlank += 1;
+        continue;
+      }
 
       const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
       const target = getOutputSize(label.width, label.height, settings.pageSize);
@@ -423,6 +466,7 @@ export async function createCroppedPdf(file, settings) {
       const infoAreaHeight =
         settings.includeInvoiceText && settings.pageSize !== "source" ? Math.min(132, target.height * 0.31) : 0;
       const labelAreaHeight = target.height - infoAreaHeight;
+
       page.drawRectangle({
         x: 0,
         y: 0,
@@ -446,17 +490,30 @@ export async function createCroppedPdf(file, settings) {
       });
 
       drawProductDetails(page, details, textFont, boldFont, target, infoAreaHeight);
-
       labelsAdded += 1;
     }
+
+    onProgress?.({
+      phase: "cropping",
+      page: pageIndex + 1,
+      total: sourcePages.length,
+      percent: 65 + Math.round(((pageIndex + 1) / sourcePages.length) * 30),
+    });
   }
+
+  if (pdfJsDoc) await pdfJsDoc.destroy();
 
   if (!labelsAdded) {
-    throw new Error("No labels were detected. Try turning off blank-label skipping or reducing margin trim.");
+    const hints = [];
+    if (settings.skipBlank) hints.push("turn off blank-label skipping");
+    if (settings.smartScan) hints.push("try manual layout mode");
+    hints.push("reduce margin trim");
+    throw new Error(`No labels were detected. Try ${hints.join(", ")}.`);
   }
 
+  onProgress?.({ phase: "done", percent: 100 });
   const outputBytes = await outputPdf.save();
-  return { outputBytes, pageCount: sourcePages.length, labelsAdded };
+  return { outputBytes, pageCount: sourcePages.length, labelsAdded, skippedBlank };
 }
 
 export function initPdfJsWorker() {
