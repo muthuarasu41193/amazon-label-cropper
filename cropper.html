@@ -3,6 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Label Cropper · LabelForge</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -10,8 +13,8 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="css/base.css" />
-    <link rel="stylesheet" href="css/cropper.css" />
+    <link rel="stylesheet" href="css/base.css?v=2.1.0" />
+    <link rel="stylesheet" href="css/cropper.css?v=2.1.0" />
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   </head>
@@ -23,6 +26,7 @@
       </a>
       <div class="nav-actions">
         <span class="chip chip--live">Processing locally</span>
+        <span class="chip chip--version">v2.1</span>
         <a class="btn btn--ghost" href="index.html">All tools</a>
       </div>
     </header>
@@ -173,6 +177,6 @@
       <p>PDF never uploaded — cropped on your machine only.</p>
     </footer>
 
-    <script type="module" src="js/cropper-app.js"></script>
+    <script type="module" src="js/cropper-app.js?v=2.1.0"></script>
   </body>
 </html>

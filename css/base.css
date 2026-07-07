@@ -163,6 +163,13 @@ img {
   box-shadow: 0 0 8px #22c55e;
 }
 
+.chip--version {
+  border-color: rgba(var(--brand-rgb), 0.35);
+  color: var(--brand);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
