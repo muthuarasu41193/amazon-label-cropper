@@ -1,13 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Download, Upload } from "lucide-react";
 import { createCroppedPdf, initPdfJsWorker, type CropSettings } from "@/lib/crop-engine";
 import { getPlatform } from "@/lib/platforms";
 
-export default function CropPage() {
-  const platform = getPlatform("amazon");
+function CropPageContent() {
+  const searchParams = useSearchParams();
+  const platformId = searchParams.get("p") ?? "amazon";
+  const platform = getPlatform(platformId);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -17,7 +21,7 @@ export default function CropPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [downloadName, setDownloadName] = useState("labels.pdf");
 
-  const [settings, setSettings] = useState<CropSettings>({
+  const [settings, setSettings] = useState<CropSettings>(() => ({
     cropPreset: platform.defaults.cropPreset,
     leftPercent: platform.defaults.leftPercent,
     marginPercent: platform.defaults.marginPercent,
@@ -25,11 +29,24 @@ export default function CropPage() {
     fitMode: "contain",
     skipBlank: platform.defaults.skipBlank,
     includeInvoiceText: platform.defaults.includeInvoiceText,
-  });
+  }));
 
   useEffect(() => {
     initPdfJsWorker();
   }, []);
+
+  useEffect(() => {
+    setSettings({
+      cropPreset: platform.defaults.cropPreset,
+      leftPercent: platform.defaults.leftPercent,
+      marginPercent: platform.defaults.marginPercent,
+      pageSize: "4x6",
+      fitMode: "contain",
+      skipBlank: platform.defaults.skipBlank,
+      includeInvoiceText: platform.defaults.includeInvoiceText,
+    });
+    setStatus({ title: "Waiting for a PDF.", detail: platform.uploadHint, error: false });
+  }, [platform]);
 
   useEffect(() => {
     const pendingUrl = sessionStorage.getItem("pendingPdf");
@@ -88,7 +105,7 @@ export default function CropPage() {
       const url = URL.createObjectURL(blob);
       setCroppedBlob(blob);
       setPreviewUrl(url);
-      setDownloadName(selectedFile.name.replace(/\.pdf$/i, "") + "-labels.pdf");
+      setDownloadName(selectedFile.name.replace(/\.pdf$/i, "") + `-${platform.id}-labels.pdf`);
       setStatus({
         title: "Cropped PDF ready",
         detail: `${labelsAdded} labels from ${pageCount} source pages.`,
@@ -123,7 +140,7 @@ export default function CropPage() {
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>
-          <span className="text-sm font-semibold text-text">Label Cropper</span>
+          <span className="text-sm font-semibold text-text">{platform.name} Label Cropper</span>
           <button
             type="button"
             onClick={downloadPdf}
@@ -137,6 +154,8 @@ export default function CropPage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
+        <p className="mb-6 text-sm text-muted">{platform.layoutNote}</p>
+
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-6">
             <label
@@ -164,11 +183,12 @@ export default function CropPage() {
               />
               <Upload className="mb-3 h-8 w-8 text-primary" />
               <p className="font-medium text-text">Drop shipping PDF here</p>
-              <p className="mt-1 text-sm text-muted">{selectedFile?.name ?? "No file selected"}</p>
+              <p className="mt-1 text-sm text-muted">{selectedFile?.name ?? platform.uploadHint}</p>
             </label>
 
             <div className="rounded-[var(--radius-card)] border border-border bg-white p-5 shadow-[var(--shadow-soft)]">
-              <h2 className="mb-4 text-sm font-semibold text-text">Crop settings</h2>
+              <h2 className="mb-1 text-sm font-semibold text-text">Crop settings</h2>
+              <p className="mb-4 text-xs text-muted">Preset: {platform.presetLabel}</p>
               <div className="space-y-4">
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted">Source layout</label>
@@ -234,5 +254,17 @@ export default function CropPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function CropPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-white text-sm text-muted">Loading cropper…</div>
+      }
+    >
+      <CropPageContent />
+    </Suspense>
   );
 }
