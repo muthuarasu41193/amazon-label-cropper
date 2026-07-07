@@ -1,4 +1,4 @@
-/** @typedef {{ id: string, name: string, tagline: string, accent: string, accentRgb: string, icon: string, category: string, defaults: { cropPreset: string, leftPercent: number, marginPercent: number, includeInvoiceText: boolean, skipBlank: boolean }, uploadHint: string, layoutNote: string }} Platform */
+/** @typedef {{ id: string, name: string, tagline: string, accent: string, accentRgb: string, icon: string, category: string, defaults: { cropPreset: string, leftPercent: number, marginPercent: number, includeInvoiceText: boolean, skipBlank: boolean, smartScan: boolean }, uploadHint: string, layoutNote: string }} Platform */
 
 /** @type {Record<string, Platform>} */
 export const PLATFORMS = {
@@ -16,9 +16,10 @@ export const PLATFORMS = {
       marginPercent: 1,
       includeInvoiceText: true,
       skipBlank: true,
+      smartScan: true,
     },
     uploadHint: "Upload the official Amazon multi-label shipping PDF.",
-    layoutNote: "Labels on the left, tax invoices on the right (default).",
+    layoutNote: "Smart scan finds every label — even when Amazon shifts layout.",
   },
   flipkart: {
     id: "flipkart",
@@ -142,6 +143,7 @@ export const PLATFORMS = {
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: false,
+      smartScan: false,
     },
     uploadHint: "Upload Shopify or app-generated multi-label PDF.",
     layoutNote: "DTC PDFs vary — try top-half or source size if needed.",
@@ -250,6 +252,7 @@ export const PLATFORMS = {
       marginPercent: 1,
       includeInvoiceText: true,
       skipBlank: false,
+      smartScan: false,
     },
     uploadHint: "Upload IndiaMART or logistics partner label PDF.",
     layoutNote: "B2B formats differ — adjust layout preset as needed.",

@@ -175,7 +175,7 @@ img {
   font: inherit;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease, filter 0.2s ease;
 }
 
 .btn:active:not(:disabled) {
