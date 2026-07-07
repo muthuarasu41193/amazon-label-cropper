@@ -1,4 +1,4 @@
-import { PLATFORM_LIST, CATEGORY_LABELS, SUGGESTED_TOOLS } from "./platforms.js";
+import { PLATFORM_LIST, CATEGORY_LABELS, SUGGESTED_TOOLS } from "./platforms.js?v=2.2.0";
 
 const platformGrid = document.getElementById("platformGrid");
 const toolRoadmap = document.getElementById("toolRoadmap");
@@ -26,7 +26,7 @@ for (const category of categoryOrder) {
   for (const p of items) {
     const card = document.createElement("a");
     card.className = "platform-card";
-    card.href = `cropper.html?p=${encodeURIComponent(p.id)}`;
+    card.href = `crop.html?p=${encodeURIComponent(p.id)}`;
     card.style.setProperty("--card-accent", p.accent);
     card.style.setProperty("--card-accent-rgb", p.accentRgb);
     card.innerHTML = `

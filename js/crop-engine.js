@@ -1,4 +1,4 @@
-import { scanPageForLabels, regionHasContent } from "./label-scanner.js";
+import { scanPageForLabels, regionHasContent } from "./label-scanner.js?v=2.2.0";
 
 const { PDFDocument, StandardFonts, rgb } = PDFLib;
 
