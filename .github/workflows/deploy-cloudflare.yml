@@ -1,15 +1,27 @@
+# Optional Cloudflare Workers deploy.
+# Disabled on push so missing CLOUDFLARE_* secrets do not create
+# "No jobs were run" failure emails on every commit to master.
+# Run manually from Actions → Deploy to Cloudflare Workers when secrets are configured.
+
 name: Deploy to Cloudflare Workers
 
 on:
-  push:
-    branches: ["master"]
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
     steps:
+      - name: Require Cloudflare secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Set repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID before deploying."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 

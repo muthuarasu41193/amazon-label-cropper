@@ -73,7 +73,7 @@ If you use Cloudflare Git integration, set **Settings → Builds**:
 | Build command | `npm ci && npm run build && npx wrangler deploy` |
 | Root directory | repository root |
 
-Optional: add repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` to enable `.github/workflows/deploy-cloudflare.yml`.
+Optional Cloudflare deploy is manual only: set repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, then run **Actions → Deploy to Cloudflare Workers → Run workflow**. It does not run on every push (that used to fail with “No jobs were run” when secrets were missing).
 
 **Note:** Do not use `GITHUB_PAGES=true` for Cloudflare — the Workers URL is at the domain root, not a GitHub subpath.
 
