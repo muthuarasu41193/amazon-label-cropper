@@ -139,8 +139,14 @@ export function OutputSettings({
               onChange={(e) => update({ includeInvoiceText: e.target.checked })}
               className="rounded border-border"
             />
-            Add product name and quantity (Amazon only)
+            Add SKU | Qty overlay (Amazon only)
           </label>
+        )}
+        {isAmazon && (
+          <p className="text-xs text-muted">
+            Amazon output uses full A4 pages so the shipping label stays large. Overlay shows the short seller SKU and quantity (for example{" "}
+            <span className="font-medium text-text">5KUNDANPEN | Qty - 1</span>), not the full product title.
+          </p>
         )}
 
         <div>

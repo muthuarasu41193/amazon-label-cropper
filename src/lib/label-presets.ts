@@ -108,13 +108,13 @@ export const LABEL_PRESETS: Record<string, LabelPreset> = {
   "amazon-india": {
     id: "amazon-india",
     name: "Amazon India",
-    description: "Left-half split with invoice text for Amazon.in exports",
+    description: "A4 enlarged labels with compact SKU | Qty overlay (no label shrink)",
     group: "platform",
     settings: base({
       labelPreset: "amazon-india",
-      pageSize: "4x6",
+      pageSize: "a4",
       leftPercent: 50,
-      marginPercent: 1,
+      marginPercent: 0.35,
       includeInvoiceText: true,
       skipBlank: true,
       smartScan: true,
@@ -127,9 +127,9 @@ export const LABEL_PRESETS: Record<string, LabelPreset> = {
     group: "platform",
     settings: base({
       labelPreset: "amazon-us",
-      pageSize: "4x6",
+      pageSize: "a4",
       leftPercent: 50,
-      marginPercent: 0.75,
+      marginPercent: 0.35,
       includeInvoiceText: true,
       skipBlank: true,
       smartScan: true,

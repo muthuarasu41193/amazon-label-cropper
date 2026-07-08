@@ -48,7 +48,7 @@ export const PLATFORMS: Record<string, Platform> = {
       smartScan: true,
     },
     uploadHint: "Upload the official Amazon multi-label shipping PDF.",
-    layoutNote: "Shipping label on the left (~50% / ~100 mm), tax invoice on the right — up to 2 labels per A4 page. Product name & qty preserved.",
+    layoutNote: "Shipping label on the left (~50%), enlarged to full A4 with compact SKU | Qty overlay — label is never shrunk.",
   },
   ebay: {
     id: "ebay",
@@ -152,7 +152,7 @@ export const PLATFORMS: Record<string, Platform> = {
     category: "marketplace",
     labelSizes: ["4×6", "A6"],
     presetLabel: "Flipkart · top split",
-    recommendedPresetId: "amazon-india",
+    recommendedPresetId: "thermal",
     defaults: {
       cropPreset: "top-split",
       leftPercent: 100,
@@ -175,7 +175,7 @@ export const PLATFORMS: Record<string, Platform> = {
     category: "marketplace",
     labelSizes: ["4×6", "A6"],
     presetLabel: "Meesho · top split",
-    recommendedPresetId: "amazon-india",
+    recommendedPresetId: "thermal",
     defaults: {
       cropPreset: "top-split",
       leftPercent: 100,

@@ -35,7 +35,11 @@ export type CropProgress = {
 
 type Box = { left: number; bottom: number; right: number; top: number };
 type Pair = { labelBox: Box; invoiceBox: Box };
-type ProductDetails = { productName: string; quantity: string } | null;
+/** Amazon packing line: short seller SKU + quantity (not the full product title). */
+type ProductDetails = { sku: string; quantity: string } | null;
+
+/** A4 page used by Amazon reference croppers so the left label can be enlarged ~2×. */
+const AMAZON_OUTPUT_A4 = { width: 595.28, height: 841.89 };
 
 let workerReady = false;
 
@@ -240,6 +244,26 @@ function extractQuantityFromRowText(text: string) {
   return smallNumbers.find((value) => Number(value) > 0 && Number(value) < 1000) || "";
 }
 
+/**
+ * Amazon invoice line format ends with ASIN + seller SKU in parentheses, e.g.
+ * `... | B0GTW9WXXY ( 5KUNDANPEN )` — sometimes the closing `)` is on the next row.
+ */
+function extractAmazonSku(description: string) {
+  const normalized = description.replace(/\s+/g, " ").trim();
+  const withAsin = normalized.match(/B0[A-Z0-9]{8}\s*\(\s*([^)]+?)\s*\)/i);
+  if (withAsin?.[1]) return withAsin[1].replace(/\)\s*$/, "").trim();
+  const anyParen = normalized.match(/\(\s*([A-Za-z0-9][A-Za-z0-9 +_\-./]{1,48})\s*\)/);
+  if (anyParen?.[1] && !/^B0[A-Z0-9]{8}$/i.test(anyParen[1])) {
+    return anyParen[1].trim();
+  }
+  // Split across rows: `B0... (` on one line and `SKU )` on the next.
+  const openAsin = normalized.match(/B0[A-Z0-9]{8}\s*\(\s*(.+)$/i);
+  if (openAsin?.[1]) {
+    return openAsin[1].replace(/\)\s*$/, "").trim();
+  }
+  return "";
+}
+
 function parseProductDetailsFromItems(items: TextItem[]): ProductDetails {
   const rows = itemRows(items);
   const header = findHeader(rows) || fixedColumnHeader(items);
@@ -249,18 +273,21 @@ function parseProductDetailsFromItems(items: TextItem[]): ProductDetails {
   let quantity = "";
 
   for (const row of rows.slice(Math.max(0, header.index + 1))) {
-    if (/\b(total|subtotal|tax|amount in words|signature|authorized)\b/i.test(row.text)) break;
+    if (/\b(total|subtotal|amount in words|signature|authorized)\b/i.test(row.text)) break;
     if (/\b(order number|order date|invoice|place of supply|place of delivery)\b/i.test(row.text)) continue;
 
-    const descriptionText = row.items
+    // Keep SKU-closing rows even when they don't look like description text.
+    const rawLine = row.items
       .filter((item) => item.x >= header.descriptionX - 4 && item.x < header.unitX - 4)
       .map((item) => item.text)
       .join(" ")
       .replace(/\s+/g, " ")
-      .replace(/\bHSN\b.*$/i, "")
       .trim();
 
-    if (descriptionText && !/^\d+$/.test(descriptionText) && !/^hsn\b/i.test(descriptionText)) {
+    if (/^hsn\b/i.test(rawLine)) continue;
+
+    const descriptionText = rawLine.replace(/\bHSN\b.*$/i, "").trim();
+    if (descriptionText && !/^\d+$/.test(descriptionText)) {
       descriptionParts.push(descriptionText);
     }
 
@@ -272,16 +299,26 @@ function parseProductDetailsFromItems(items: TextItem[]): ProductDetails {
     }
 
     if (!quantity) quantity = extractQuantityFromRowText(row.text);
-    if (descriptionParts.length >= 10 && quantity) break;
+    if (descriptionParts.length >= 14 && quantity && extractAmazonSku(descriptionParts.join(" "))) break;
   }
 
-  const productName = descriptionParts.join(" ").replace(/\bHSN\b.*$/i, "").replace(/\s+/g, " ").trim();
-  if (!productName && !quantity) return null;
-  return { productName, quantity };
+  const joinedDescription = descriptionParts.join(" ").replace(/\s+/g, " ").trim();
+  const sku = extractAmazonSku(joinedDescription);
+  if (!sku && !quantity) return null;
+  return { sku: sku || joinedDescription.slice(0, 40).trim(), quantity: quantity || "1" };
 }
 
 function isDetected(details: ProductDetails) {
-  return Boolean(details?.productName || details?.quantity);
+  return Boolean(details?.sku || details?.quantity);
+}
+
+/** Compact Amazon overlay line matching common India label croppers: `SKU | Qty - 1`. */
+function formatAmazonSkuQtyLine(details: ProductDetails) {
+  if (!details) return "";
+  const sku = makePdfTextSafe(details.sku || "").trim();
+  const qty = makePdfTextSafe(details.quantity || "1").trim() || "1";
+  if (!sku) return `Qty - ${qty}`;
+  return `${sku} | Qty - ${qty}`;
 }
 
 async function extractProductDetails(
@@ -316,41 +353,45 @@ async function extractProductDetails(
   return details;
 }
 
-function drawProductDetails(
+/**
+ * Amazon-only overlay matching reference croppers (`SKU | Qty - 1`).
+ * Drawn near the bottom of an A4 page so the shipping label itself stays full-size.
+ */
+function drawAmazonSkuQtyOverlay(
   page: PDFPage,
   details: ProductDetails,
   font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
-  boldFont: Awaited<ReturnType<PDFDocument["embedFont"]>>,
   target: { width: number; height: number },
-  areaHeight: number,
 ) {
-  if (!isDetected(details) || areaHeight <= 0) return;
+  const line = formatAmazonSkuQtyLine(details);
+  if (!line) return;
 
-  const padding = 9;
-  const labelSize = 8;
-  const bodySize = 7.2;
-  const maxWidth = target.width - padding * 2;
-  let y = areaHeight - padding - labelSize;
+  // Reference success PDF places the overlay around x≈85, y≈185 on A4.
+  const fontSize = Math.min(16, Math.max(11, target.width * 0.022));
+  const maxWidth = target.width - 100;
+  const text = wrapText(line, font, fontSize, maxWidth)[0] || line;
+  const x = Math.min(85, target.width * 0.14);
+  const y = Math.min(185, target.height * 0.22);
 
-  page.drawText("Product Name -", { x: padding, y, size: labelSize, font: boldFont, color: rgb(0, 0, 0) });
-  y -= 10;
+  page.drawText(text, {
+    x,
+    y,
+    size: fontSize,
+    font,
+    color: rgb(0, 0, 0),
+  });
+}
 
-  const productLines = wrapText(details?.productName || "", font, bodySize, maxWidth).slice(0, 8);
-  for (const line of productLines) {
-    if (y < 16) break;
-    page.drawText(line, { x: padding, y, size: bodySize, font, color: rgb(0, 0, 0) });
-    y -= 8;
-  }
-
-  if (y >= 8 && details?.quantity) {
-    page.drawText(`Quantity - ${makePdfTextSafe(details.quantity)}`, {
-      x: padding,
-      y,
-      size: labelSize,
-      font: boldFont,
-      color: rgb(0, 0, 0),
-    });
-  }
+function getAmazonOutputSize(labelWidth: number, labelHeight: number) {
+  // Enlarge the left-column crop onto full A4 (~2×) like the reference cropper —
+  // never shrink into a secondary product-info strip on a 4×6 page.
+  const scale = Math.min(AMAZON_OUTPUT_A4.width / labelWidth, AMAZON_OUTPUT_A4.height / labelHeight);
+  return {
+    page: AMAZON_OUTPUT_A4,
+    scale,
+    drawWidth: labelWidth * scale,
+    drawHeight: labelHeight * scale,
+  };
 }
 
 async function looksBlank(
@@ -435,7 +476,6 @@ export async function createCroppedPdf(
   const sourcePdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const outputPdf = await PDFDocument.create();
   const textFont = await outputPdf.embedFont(StandardFonts.Helvetica);
-  const boldFont = await outputPdf.embedFont(StandardFonts.HelveticaBold);
   const sourcePages = sourcePdf.getPages();
 
   // Always load pdf.js for marketplace PDFs so invoice pages can be skipped and
@@ -474,7 +514,8 @@ export async function createCroppedPdf(
 
   onProgress?.({ phase: "cropping", percent: 65 });
 
-  const showProductInfo = effectiveSettings.includeInvoiceText && effectiveSettings.platformId === "amazon";
+  const isAmazon = effectiveSettings.platformId === "amazon";
+  const showAmazonSkuOverlay = isAmazon && effectiveSettings.includeInvoiceText;
 
   for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
     const pairs = allPairs[pageIndex];
@@ -487,29 +528,51 @@ export async function createCroppedPdf(
       if (await looksBlank(sourcePdf, pdfJsDoc, pageIndex, pair.labelBox, effectiveSettings, width, height)) continue;
 
       const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
+
+      // Amazon: enlarge left-column crop onto full A4 and overlay compact SKU|Qty —
+      // never reserve a product-info strip that shrinks the shipping label.
+      if (isAmazon) {
+        const amazon = getAmazonOutputSize(label.width, label.height);
+        const page = outputPdf.addPage([amazon.page.width, amazon.page.height]);
+        page.drawRectangle({
+          x: 0,
+          y: 0,
+          width: amazon.page.width,
+          height: amazon.page.height,
+          color: rgb(1, 1, 1),
+        });
+        page.drawPage(label, {
+          x: (amazon.page.width - amazon.drawWidth) / 2,
+          y: (amazon.page.height - amazon.drawHeight) / 2,
+          width: amazon.drawWidth,
+          height: amazon.drawHeight,
+        });
+        if (showAmazonSkuOverlay && isDetected(details)) {
+          drawAmazonSkuQtyOverlay(page, details, textFont, amazon.page);
+        }
+        labelsAdded += 1;
+        continue;
+      }
+
       const target = getOutputSize(label.width, label.height, effectiveSettings);
       const page = outputPdf.addPage([target.width, target.height]);
-      const infoAreaHeight =
-        showProductInfo && effectiveSettings.pageSize !== "source" ? Math.min(132, target.height * 0.31) : 0;
-      const labelAreaHeight = target.height - infoAreaHeight;
 
       page.drawRectangle({ x: 0, y: 0, width: target.width, height: target.height, color: rgb(1, 1, 1) });
 
       const scale =
         effectiveSettings.fitMode === "cover"
-          ? Math.max(target.width / label.width, labelAreaHeight / label.height)
-          : Math.min(target.width / label.width, labelAreaHeight / label.height);
+          ? Math.max(target.width / label.width, target.height / label.height)
+          : Math.min(target.width / label.width, target.height / label.height);
       const drawWidth = label.width * scale;
       const drawHeight = label.height * scale;
 
       page.drawPage(label, {
         x: (target.width - drawWidth) / 2,
-        y: infoAreaHeight + (labelAreaHeight - drawHeight) / 2,
+        y: (target.height - drawHeight) / 2,
         width: drawWidth,
         height: drawHeight,
       });
 
-      drawProductDetails(page, details, textFont, boldFont, target, infoAreaHeight);
       labelsAdded += 1;
     }
 
