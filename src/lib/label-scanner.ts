@@ -353,7 +353,6 @@ export async function isPageSkippable(
   pageHeight: number,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   textContent: any,
-  _settings: CropSettings,
 ) {
   const fullPageText = textItemsInRegion(textContent, { left: 0, bottom: 0, right: pageWidth, top: pageHeight }, pageHeight);
   const isInvoicePage = INVOICE_ONLY_PATTERN.test(fullPageText) && !LABEL_TEXT_PATTERN.test(fullPageText);

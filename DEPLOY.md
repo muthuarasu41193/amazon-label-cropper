@@ -1,8 +1,51 @@
 # Deploy LabelForge (Next.js)
 
-The live site must serve the **Next.js static export** in `out/` — not the legacy `index.html` / `cropper.html` at the repo root.
+The live site must serve the **Next.js app** — not the legacy `index.html` / `cropper.html` at the repo root.
 
-## GitHub Pages (recommended)
+## Vercel (primary)
+
+**URL:** https://amazon-label-cropper.vercel.app
+
+Connected to the GitHub repo — each push to `master` triggers a production deploy.
+
+### Required settings (enforced in repo)
+
+| Setting | Value | Why |
+|---------|--------|-----|
+| Framework | `nextjs` (`vercel.json`) | Prevents "Other"/static root deploy of legacy HTML |
+| Build command | `npm run build` | Standard Next.js build |
+| Install command | `npm ci` | Reproducible installs |
+| Output directory | **unset** | Native Next.js runtime (never `out` or `.`) |
+| Env `GITHUB_PAGES` | **must not** be `true` | That mode is only for GitHub Pages subpath + static export |
+
+Legacy files are excluded by `.vercelignore` (`index.html`, `crop.html`, `cropper.html`, `js/`, `css/`).
+
+### Preflight before releasing
+
+```bash
+npm run verify
+```
+
+This runs typecheck, lint, and `scripts/verify-vercel-build.mjs`, which fails if Vercel config regresses.
+
+GitHub Actions workflow `.github/workflows/ci.yml` also builds with `VERCEL=1` on every push/PR to `master`.
+
+Manual deploy:
+
+```bash
+npx vercel deploy --prod
+```
+
+### Dashboard checklist (one-time)
+
+In Vercel → Project → Settings → Build & Deployment:
+
+1. Framework Preset: **Next.js** (repo `vercel.json` overrides this if dashboard drifts)
+2. Output Directory: leave default / unset (do **not** override to `out`)
+3. Root Directory: repository root
+4. Do not add `GITHUB_PAGES=true`
+
+## GitHub Pages
 
 **URL:** https://muthuarasu41193.github.io/amazon-label-cropper/
 
@@ -32,20 +75,6 @@ If you use Cloudflare Git integration, set **Settings → Builds**:
 
 Optional: add repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` to enable `.github/workflows/deploy-cloudflare.yml`.
 
-## Vercel
-
-**URL:** https://amazon-label-cropper.vercel.app
-
-Connected to the GitHub repo — each push to `master` triggers a production deploy.
-
-Manual deploy:
-
-```bash
-npx vercel deploy --prod
-```
-
-**Important:** Do not set `GITHUB_PAGES=true` on Vercel (site runs at domain root, not a GitHub subpath). Legacy `index.html` / `cropper.html` at the repo root are excluded via `.vercelignore`.
-
 **Note:** Do not use `GITHUB_PAGES=true` for Cloudflare — the Workers URL is at the domain root, not a GitHub subpath.
 
 ## Run locally
@@ -59,4 +88,4 @@ Open http://localhost:3000
 
 ## Legacy static files
 
-`index.html`, `cropper.html`, `js/`, and `css/` at the repo root are **deprecated**. They are kept for reference only and are **not** deployed when GitHub Actions Pages workflow is active.
+`index.html`, `cropper.html`, `js/`, and `css/` at the repo root are **deprecated**. They are kept for reference only and are **not** deployed to Vercel (see `.vercelignore`) or when the GitHub Actions Pages workflow is active.

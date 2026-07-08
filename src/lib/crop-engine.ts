@@ -397,7 +397,7 @@ async function resolvePagePairs(
       const textContent = await pdfPage.getTextContent();
 
       // Skip invoice-only or blank pages entirely — no empty output pages.
-      if (await isPageSkippable(pdfPage, width, height, textContent, settings)) {
+      if (await isPageSkippable(pdfPage, width, height, textContent)) {
         allPairs.push([]);
         continue;
       }

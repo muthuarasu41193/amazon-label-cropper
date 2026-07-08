@@ -5,10 +5,23 @@ node_modules
 .next
 out
 
-# wrangler files
+# wrangler / cloudflare
 .wrangler
 .dev.vars*
 !.dev.vars.example
+
+# env
 .env*
 !.env.example
+
+# vercel
 .vercel
+
+# typescript / tooling
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# logs / OS
+*.log
+.DS_Store
+Thumbs.db

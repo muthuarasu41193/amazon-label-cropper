@@ -1,19 +1,23 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build",
   "redirects": [
     {
       "source": "/cropper.html",
       "destination": "/crop/",
-      "permanent": false
+      "permanent": true
     },
     {
       "source": "/crop.html",
       "destination": "/crop/",
-      "permanent": false
+      "permanent": true
     },
     {
       "source": "/index.html",
       "destination": "/",
-      "permanent": false
+      "permanent": true
     }
   ],
   "headers": [

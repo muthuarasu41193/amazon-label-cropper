@@ -1,0 +1,30 @@
+---
+description: Keep Vercel deploying the Next.js app, never the legacy static HTML hub
+alwaysApply: true
+---
+
+# Vercel / deployment rules
+
+This repo is a **Next.js app** (`src/`). Root `index.html`, `crop.html`, `cropper.html`, `js/`, and `css/` are **legacy** and must not be served on Vercel.
+
+## Do
+
+- Keep `"framework": "nextjs"` in `vercel.json`
+- Keep legacy paths listed in `.vercelignore`
+- On Vercel, rely on native Next.js (`VERCEL=1` → no `output: "export"`)
+- Run `npm run verify` (or at least `npm run verify:vercel`) before committing deploy/config changes
+- Put product code under `src/`
+
+## Do not
+
+- Set `outputDirectory` in `vercel.json` (especially not `out` or `.`)
+- Set `GITHUB_PAGES=true` for Vercel builds
+- Remove `.vercelignore` exclusions for `index.html` / `crop*.html` / `js/` / `css/`
+- "Fix" Vercel by switching Framework Preset to Other / static
+- Treat root HTML as the live app
+
+## If deploy looks wrong
+
+1. Confirm Vercel Framework Preset is Next.js (repo `vercel.json` should force this)
+2. Confirm redirects map `/cropper.html` and `/crop.html` → `/crop/`
+3. Re-run `npm run verify:vercel`

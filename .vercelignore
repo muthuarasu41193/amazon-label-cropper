@@ -1,10 +1,25 @@
-# Legacy static site — superseded by Next.js app in src/
+# Legacy static site — never deploy these. The live app is Next.js under src/.
 index.html
 cropper.html
 crop.html
 js/
 css/
+public/legacy/
 
-# Build artifacts
+# Local / CI artifacts (Vercel rebuilds these)
 .next/
+out/
+.vercel/
+node_modules/
 tsconfig.tsbuildinfo
+*.log
+.env*.local
+
+# Docs and non-runtime files
+DEPLOY.md
+DEPLOY-CLOUDFLARE.md
+README.md
+.github/
+.cursor/
+.gitignore
+.wrangler/

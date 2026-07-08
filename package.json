@@ -6,7 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "verify:vercel": "node scripts/verify-vercel-build.mjs",
+    "verify": "npm run typecheck && npm run lint && npm run verify:vercel"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
   "lucide-react": "^0.511.0",
