@@ -19,17 +19,21 @@ const LABEL_TEXT_PATTERN =
   /\b(ship\s*to|ship\s*from|deliver\s*to|shipping\/?customer\s*address|tracking|awb\b|awb\s*no|fba|amazon\s+logistics|courier|consignee|pickup|shipment\s*id|carrier|destination|return\s*to|fulfillment|waybill|dispatch|consignment|ekart|shadowfax|delhivery|valmo|meesho|flipkart|atspl|amzl)\b/i;
 
 const INVOICE_TEXT_PATTERN =
-  /\b(description|invoice|tax\s*invoice|qty|quantity|unit\s*price|hsn|gst|subtotal|amount|bill\s*to|cgst|sgst|igst|gstin|sold\s*by|payment\s*transaction|pan\s*no)\b/i;
+  /\b(description|invoice|tax\s*invoice|qty|quantity|unit\s*price|hsn|gst|subtotal|amount|bill\s*to|cgst|sgst|igst|gstin|sold\s*by|payment\s*transaction|pan\s*(?:no|number|#)?)\b/i;
 
 const INVOICE_ONLY_PATTERN =
-  /\b(tax\s*invoice|invoice\s*number|invoice\s*date|amount\s*in\s*words|authorized\s*signatory|place\s*of\s*supply|taxable\s*value|total\s*invoice\s*value|payment\s*transaction\s*id|pan\s*no|gst\s*registration|sold\s*by)\b/i;
+  /\b(tax\s*invoice|invoice\s*number|invoice\s*date|amount\s*in\s*words|authorized\s*signatory|place\s*of\s*supply|taxable\s*value|total\s*invoice\s*value|payment\s*transaction\s*id|pan\s*(?:no|number|#)?|gst\s*(?:registration|in|no\.?)|gstin|sold\s*by|irn\b|e-?invoice)\b/i;
 
 /** Seller-info / invoice fragments that appear when Amazon left-column has no label. */
 const AMAZON_INVOICE_FRAGMENT_PATTERN =
-  /\b(sold\s*by|pan\s*no|gst\s*registration|tax\s*invoice|payment\s*transaction\s*id|billing\s*address|invoice\s*number)\b/i;
+  /\b(sold\s*by|pan\s*(?:no|number|#)?|gst\s*(?:registration|in|no\.?)|gstin|tax\s*invoice|payment\s*transaction\s*id|billing\s*address|invoice\s*number|irn\b|e-?invoice)\b/i;
 
-const SHIPPING_LABEL_MARKER_PATTERN =
-  /\b(ship\s*to|ship\s*from|deliver\s*to|shipping\/?customer\s*address|awb\b|awb\s*no|tracking|consignee|amazon\s+logistics|amzl|atspl)\b/i;
+/**
+ * Markers that prove a real shipping label. Deliberately excludes "Deliver To" —
+ * that phrase appears on Amazon India tax invoices and was letting them through.
+ */
+const STRONG_SHIPPING_MARKER_PATTERN =
+  /\b(ship\s*to|ship\s*from|awb\b|awb\s*no|tracking\s*(?:id|number|no)?|amazon\s+logistics|amzl|atspl|shipping\/?customer\s*address)\b/i;
 
 const CONTENT_DENSITY = 0.018;
 const BLANK_PAGE_DENSITY = 0.012;
@@ -38,6 +42,17 @@ const INVOICE_LOW_DENSITY = 0.025;
 /** Marketplaces that must have a scannable barcode on every kept label crop. */
 function requiresBarcode(platformId?: string) {
   return platformId === "amazon" || platformId === "flipkart" || platformId === "meesho";
+}
+
+/**
+ * Invoice / seller-info identity without a strong shipping-label marker.
+ * E-invoice QRs and dense tables often fake a barcode score — invoice text wins.
+ */
+function isInvoiceIdentityWithoutShipping(text: string) {
+  const hasInvoice =
+    INVOICE_ONLY_PATTERN.test(text) || AMAZON_INVOICE_FRAGMENT_PATTERN.test(text);
+  if (!hasInvoice) return false;
+  return !STRONG_SHIPPING_MARKER_PATTERN.test(text);
 }
 
 function pdfBoxToCanvasRect(box: Box, pageWidth: number, pageHeight: number, viewport: { width: number; height: number }) {
@@ -269,15 +284,27 @@ function scoreLabelRegion(
   return { score, density, hasLabelText, hasInvoiceText, hasBarcode: barcodeScore >= 0.2 };
 }
 
-/** Returns true when the page is invoice-only (no shipping label / barcode content). */
+/** Returns true when the page is invoice-only (no shipping label content). */
 function isInvoiceOnlyPage(
-  scored: { hasLabelText: boolean; hasInvoiceText: boolean; hasBarcode: boolean; density: number }[],
+  scored: {
+    hasLabelText: boolean;
+    hasInvoiceText: boolean;
+    hasBarcode: boolean;
+    density: number;
+    isInvoiceIdentity?: boolean;
+  }[],
 ) {
+  // Invoice identity (Sold By / PAN / GST) wins over QR false-positive barcodes.
+  if (scored.length > 0 && scored.every((s) => s.isInvoiceIdentity)) return true;
+
   // Any real shipping label has a barcode. No barcode ⇒ not a label page.
   if (scored.every((s) => !s.hasBarcode)) return true;
 
-  const anyLabelContent = scored.some((s) => s.hasLabelText || s.hasBarcode);
-  if (anyLabelContent) return false;
+  const anyRealLabel = scored.some((s) => s.hasLabelText && !s.isInvoiceIdentity);
+  if (anyRealLabel) return false;
+
+  // Barcodes alone are not enough — e-invoice QRs look like barcodes.
+  if (scored.every((s) => s.hasInvoiceText && !s.hasLabelText)) return true;
 
   const allInvoice = scored.every((s) => s.hasInvoiceText && !s.hasLabelText && !s.hasBarcode);
   const lowDensity = scored.every((s) => s.density < INVOICE_LOW_DENSITY);
@@ -416,6 +443,7 @@ type ScoredPair = {
   hasLabelText: boolean;
   hasInvoiceText: boolean;
   hasBarcode: boolean;
+  isInvoiceIdentity: boolean;
 };
 
 function validateAndRefinePairs(
@@ -433,7 +461,11 @@ function validateAndRefinePairs(
   const scored: ScoredPair[] = pairs.map((pair) => {
     const regionText = textItemsInRegion(textContent, pair.labelBox, pageHeight);
     const metrics = scoreLabelRegion(imageData, viewport, pair.labelBox, pageWidth, pageHeight, regionText);
-    return { pair, ...metrics };
+    return {
+      pair,
+      ...metrics,
+      isInvoiceIdentity: isInvoiceIdentityWithoutShipping(regionText),
+    };
   });
 
   if (isInvoiceOnlyPage(scored)) {
@@ -443,7 +475,8 @@ function validateAndRefinePairs(
   const validated: Pair[] = [];
   for (const item of scored) {
     const isBlank = item.density < CONTENT_DENSITY;
-    // Invoice fragments / logo+address panels with no barcode must never become output pages.
+    // Sold By / PAN / GST (+ optional e-invoice QR) must never become output pages.
+    if (item.isInvoiceIdentity) continue;
     const missingBarcode = requireBarcode && !item.hasBarcode;
     const isInvoice = item.hasInvoiceText && !item.hasLabelText && !item.hasBarcode;
     if (isBlank || missingBarcode || isInvoice) continue;
@@ -457,6 +490,9 @@ function validateAndRefinePairs(
       margin,
       { allowTightCrop },
     );
+    const refinedText = textItemsInRegion(textContent, refinedLabel, pageHeight);
+    if (isInvoiceIdentityWithoutShipping(refinedText)) continue;
+
     // Re-check barcode after refine so we didn't crop away the only barcode strip.
     if (requireBarcode) {
       const refinedMetrics = scoreLabelRegion(
@@ -465,7 +501,7 @@ function validateAndRefinePairs(
         refinedLabel,
         pageWidth,
         pageHeight,
-        textItemsInRegion(textContent, refinedLabel, pageHeight),
+        refinedText,
       );
       if (!refinedMetrics.hasBarcode) continue;
     }
@@ -599,6 +635,7 @@ export async function scanPageForLabels(
 
       const acceptedIndexes = new Set<number>();
       for (let i = 0; i < scored.length; i += 1) {
+        if (scored[i].isInvoiceIdentity) continue;
         const isBlank = scored[i].density < CONTENT_DENSITY;
         const missingBarcode = barcodeRequired && !scored[i].hasBarcode;
         const isInvoice = scored[i].hasInvoiceText && !scored[i].hasLabelText && !scored[i].hasBarcode;
@@ -642,6 +679,7 @@ export async function scanPageForLabels(
   for (const box of candidates) {
     const regionText = textItemsInRegion(textContent, box, pageHeight);
     const metrics = scoreLabelRegion(imageData, viewport, box, pageWidth, pageHeight, regionText);
+    if (isInvoiceIdentityWithoutShipping(regionText)) continue;
     scored.push({ box, ...metrics });
   }
 
@@ -690,8 +728,8 @@ export async function regionHasBarcode(
 }
 
 /**
- * Detect if a crop region is an Amazon seller/invoice fragment (logo + Sold By + PAN)
- * without a real shipping barcode — these must never appear in output.
+ * Detect if a crop region is an Amazon seller/invoice fragment (logo + Sold By + PAN).
+ * E-invoice QR codes often look like barcodes — invoice text without Ship To / AWB wins.
  */
 export async function regionLooksLikeInvoiceFragment(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -703,8 +741,10 @@ export async function regionLooksLikeInvoiceFragment(
   textContent: any,
 ) {
   const regionText = textItemsInRegion(textContent, box, pageHeight);
+  if (isInvoiceIdentityWithoutShipping(regionText)) return true;
+
   const hasInvoiceFragment = AMAZON_INVOICE_FRAGMENT_PATTERN.test(regionText);
-  const hasShippingMarkers = SHIPPING_LABEL_MARKER_PATTERN.test(regionText);
+  const hasShippingMarkers = STRONG_SHIPPING_MARKER_PATTERN.test(regionText);
   if (!hasInvoiceFragment) return false;
   if (hasShippingMarkers) return false;
 
@@ -722,17 +762,14 @@ export async function isPageSkippable(
   textContent: any,
 ) {
   const pageText = fullPageText(textContent, pageWidth, pageHeight);
-  const hasInvoiceMarkers = INVOICE_ONLY_PATTERN.test(pageText) || AMAZON_INVOICE_FRAGMENT_PATTERN.test(pageText);
-  const hasLabelMarkers = SHIPPING_LABEL_MARKER_PATTERN.test(pageText) || LABEL_TEXT_PATTERN.test(pageText);
 
-  // Pure invoice / seller-info pages (no ship-to / AWB language).
-  if (hasInvoiceMarkers && !SHIPPING_LABEL_MARKER_PATTERN.test(pageText)) {
-    const { ctx, viewport } = await renderPage(pdfPage, 1.5);
-    const imageData = ctx.getImageData(0, 0, viewport.width, viewport.height);
-    const fullRect = { x: 0, y: 0, w: viewport.width, h: viewport.height };
-    const { barcodeScore } = scoreRegionPixels(imageData, viewport.width, fullRect);
-    if (barcodeScore < 0.2) return true;
-  }
+  // Pure invoice / seller-info pages win even when an e-invoice QR fakes a barcode score,
+  // and even when the invoice says "Deliver To" (not a shipping label).
+  if (isInvoiceIdentityWithoutShipping(pageText)) return true;
+
+  const hasInvoiceMarkers = INVOICE_ONLY_PATTERN.test(pageText) || AMAZON_INVOICE_FRAGMENT_PATTERN.test(pageText);
+  const hasStrongShipping = STRONG_SHIPPING_MARKER_PATTERN.test(pageText);
+  const hasLabelMarkers = hasStrongShipping || LABEL_TEXT_PATTERN.test(pageText);
 
   if (hasInvoiceMarkers && !hasLabelMarkers) return true;
 
@@ -744,7 +781,7 @@ export async function isPageSkippable(
   if (density < BLANK_PAGE_DENSITY) return true;
 
   // Invoice / payment / seller-info fragments with no shipping barcode.
-  if (barcodeScore < 0.2 && (hasInvoiceMarkers || !SHIPPING_LABEL_MARKER_PATTERN.test(pageText))) {
+  if (barcodeScore < 0.2 && (hasInvoiceMarkers || !hasStrongShipping)) {
     return true;
   }
 
