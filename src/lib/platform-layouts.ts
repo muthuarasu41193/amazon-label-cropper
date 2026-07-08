@@ -61,9 +61,12 @@ export const A4_POINTS = { width: 595.28, height: 841.89 };
 export const AMAZON_LABEL_WIDTH_PERCENT = 50;
 
 /**
- * Flipkart Seller Hub A4: label typically occupies the upper half.
+ * Flipkart Seller Hub A4: shipping label is a centered band (not full page width).
+ * Reference quicklabelcrop view ≈ [165,460,430,820] on A4 → ~265×360 pt (~3.7×5 in).
  */
-export const FLIPKART_LABEL_HEIGHT_PERCENT = 50;
+export const FLIPKART_LABEL_HEIGHT_PERCENT = 43;
+/** Horizontal inset for Flipkart centered label (% of page width from each side). */
+export const FLIPKART_SIDE_INSET_PERCENT = 27.5;
 
 /**
  * Meesho Supplier Panel A4: label typically occupies the upper ~60% (barcode + address + QR).
@@ -83,12 +86,12 @@ export const PLATFORM_LAYOUTS: Record<string, PlatformLayoutProfile> = {
   },
   flipkart: {
     strategy: "flipkart-top-split",
-    labelWidthPercent: 100,
+    labelWidthPercent: 100 - FLIPKART_SIDE_INSET_PERCENT * 2,
     labelHeightPercent: FLIPKART_LABEL_HEIGHT_PERCENT,
     labelsPerPage: 1,
-    marginPercent: 0.35,
+    marginPercent: 0.25,
     outputSize: "4x6",
-    description: "Label top 50%, invoice bottom 50%, full page width",
+    description: "Centered top label band (~43% height, ~45% width), invoice/unused area removed",
   },
   meesho: {
     strategy: "meesho-top-split",
@@ -214,16 +217,18 @@ export function topSplitBoxes(
   pageHeight: number,
   labelHeightPercent: number,
   marginPercent: number,
+  sideInsetPercent = 0,
 ): Pair[] {
   const margin = marginPx(pageWidth, pageHeight, marginPercent);
   const splitY = topSplitY(pageHeight, labelHeightPercent);
+  const inset = pageWidth * (Math.max(0, Math.min(40, sideInsetPercent)) / 100);
 
   return [
     {
       labelBox: {
-        left: margin,
+        left: inset + margin,
         bottom: splitY + margin,
-        right: pageWidth - margin,
+        right: pageWidth - inset - margin,
         top: pageHeight - margin,
       },
       invoiceBox: {
@@ -234,6 +239,17 @@ export function topSplitBoxes(
       },
     },
   ];
+}
+
+/** Flipkart reference band: centered ~265×360 crop on A4 (quicklabelcrop-style). */
+export function flipkartLabelBoxes(
+  pageWidth: number,
+  pageHeight: number,
+  settings?: Partial<CropSettings>,
+): Pair[] {
+  const heightPct = settings?.labelHeightPercent ?? FLIPKART_LABEL_HEIGHT_PERCENT;
+  const marginPct = settings?.marginPercent ?? 0.25;
+  return topSplitBoxes(pageWidth, pageHeight, heightPct, marginPct, FLIPKART_SIDE_INSET_PERCENT);
 }
 
 /** Build left-column 2-up (or N-up) Amazon-style pairs. */
@@ -313,6 +329,10 @@ export function rigidBoxesForPage(
   settings?: Partial<CropSettings>,
 ): Pair[] {
   const marginPercent = settings?.marginPercent ?? profile.marginPercent;
+
+  if (profile.strategy === "flipkart-top-split") {
+    return flipkartLabelBoxes(pageWidth, pageHeight, settings);
+  }
 
   if (isTopSplitStrategy(profile.strategy)) {
     const labelHeightPct = settings?.labelHeightPercent ?? profile.labelHeightPercent;

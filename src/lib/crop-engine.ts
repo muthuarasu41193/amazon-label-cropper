@@ -5,6 +5,7 @@ import { applyPlatformLayoutToSettings, getPlatformLayout, rigidBoxesForPage, to
 import {
   detectPlatformFromPdfJs,
   isPageSkippable,
+  regionHasBarcode,
   regionHasContent,
   scanPageForLabels,
   shouldAutoDetectPlatform,
@@ -409,7 +410,17 @@ async function looksBlank(
   if (pdfJsDoc) {
     const pdfPage = await pdfJsDoc.getPage(pageIndex + 1);
     const hasContent = await regionHasContent(pdfPage, box, pageWidth, pageHeight);
-    return !hasContent;
+    if (!hasContent) return true;
+
+    // Amazon / Flipkart / Meesho shipping labels always carry a barcode.
+    // Drop logo/invoice fragments that somehow still got a crop box.
+    const platformId = settings.platformId ?? "";
+    if (platformId === "amazon" || platformId === "flipkart" || platformId === "meesho") {
+      const hasBarcode = await regionHasBarcode(pdfPage, box, pageWidth, pageHeight);
+      if (!hasBarcode) return true;
+    }
+
+    return false;
   }
 
   const probePdf = await PDFDocument.create();
@@ -420,6 +431,10 @@ async function looksBlank(
   return bytes.length < 1400;
 }
 
+function isMarketplaceWithBarcodes(platformId?: string) {
+  return platformId === "amazon" || platformId === "flipkart" || platformId === "meesho";
+}
+
 async function resolvePagePairs(
   sourcePages: PDFPage[],
   settings: CropSettings,
@@ -428,6 +443,7 @@ async function resolvePagePairs(
   onProgress?: (progress: CropProgress) => void,
 ) {
   const allPairs: Pair[][] = [];
+  const marketplace = isMarketplaceWithBarcodes(settings.platformId);
 
   for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
     const page = sourcePages[pageIndex];
@@ -444,7 +460,7 @@ async function resolvePagePairs(
       const pdfPage = await pdfJsDoc.getPage(pageIndex + 1);
       const textContent = await pdfPage.getTextContent();
 
-      // Skip invoice-only or blank pages entirely — no empty output pages.
+      // Skip invoice-only / barcode-less / blank pages entirely.
       if (await isPageSkippable(pdfPage, width, height, textContent)) {
         allPairs.push([]);
         continue;
@@ -452,11 +468,23 @@ async function resolvePagePairs(
 
       if (settings.smartScan) {
         const detected = await scanPageForLabels(pdfPage, width, height, textContent, settings);
+        // For Amazon/Flipkart/Meesho: empty scan means no barcode labels — do not fall back
+        // to rigid boxes that would emit invoice/payment fragments.
         if (detected.length > 0) {
           allPairs.push(detected);
           continue;
         }
+        if (marketplace) {
+          allPairs.push([]);
+          continue;
+        }
       }
+    }
+
+    // Manual / non-marketplace path may still use rigid geometry.
+    if (marketplace && settings.smartScan) {
+      allPairs.push([]);
+      continue;
     }
 
     allPairs.push(pairedBoxesForPage(page, settings));
@@ -554,13 +582,21 @@ export async function createCroppedPdf(
         continue;
       }
 
-      const target = getOutputSize(label.width, label.height, effectiveSettings);
+      // Flipkart / Meesho: crop is already a tight label band — enlarge onto 4×6
+      // (never keep a wide A4 strip that forces the label to shrink).
+      const isTopMarketplace =
+        effectiveSettings.platformId === "flipkart" || effectiveSettings.platformId === "meesho";
+      const target = isTopMarketplace
+        ? getOutputSize(label.width, label.height, { ...effectiveSettings, pageSize: "4x6" })
+        : getOutputSize(label.width, label.height, effectiveSettings);
       const page = outputPdf.addPage([target.width, target.height]);
 
       page.drawRectangle({ x: 0, y: 0, width: target.width, height: target.height, color: rgb(1, 1, 1) });
 
+      // Prefer cover for Flipkart so the tight label fills the thermal page.
+      const fitMode = isTopMarketplace ? "cover" : effectiveSettings.fitMode;
       const scale =
-        effectiveSettings.fitMode === "cover"
+        fitMode === "cover"
           ? Math.max(target.width / label.width, target.height / label.height)
           : Math.min(target.width / label.width, target.height / label.height);
       const drawWidth = label.width * scale;

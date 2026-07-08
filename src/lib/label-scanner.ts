@@ -1,29 +1,37 @@
 import type { CropSettings } from "./crop-engine";
 import {
   amazonSingleLabelBoxes,
+  flipkartLabelBoxes,
   getPlatformLayout,
   isLeftColumnStrategy,
   isTopSplitStrategy,
   leftColumnBoxes,
   rigidBoxesForPage,
   topSplitBoxes,
+  FLIPKART_LABEL_HEIGHT_PERCENT,
+  FLIPKART_SIDE_INSET_PERCENT,
   type Box,
   type Pair,
 } from "./platform-layouts";
 import { detectPlatformFromText, shouldAutoDetectPlatform } from "./platform-detect";
 
 const LABEL_TEXT_PATTERN =
-  /\b(ship\s*to|ship\s*from|deliver\s*to|shipment|tracking|awb|fba|amazon|courier|consignee|pickup|order\s*(?:id|no|number)|shipment\s*id|carrier|destination|return\s*to|sold\s*by|fulfillment|waybill|barcode|dispatch|consignment|ekart|shadowfax|delhivery|valmo|meesho|flipkart|atspl|amzl)\b/i;
+  /\b(ship\s*to|ship\s*from|deliver\s*to|shipment|tracking|awb|fba|amazon\s+logistics|courier|consignee|pickup|shipment\s*id|carrier|destination|return\s*to|fulfillment|waybill|barcode|dispatch|consignment|ekart|shadowfax|delhivery|valmo|meesho|flipkart|atspl|amzl)\b/i;
 
 const INVOICE_TEXT_PATTERN =
-  /\b(description|invoice|tax\s*invoice|qty|quantity|unit\s*price|hsn|gst|subtotal|amount|bill\s*to|cgst|sgst|igst|gstin)\b/i;
+  /\b(description|invoice|tax\s*invoice|qty|quantity|unit\s*price|hsn|gst|subtotal|amount|bill\s*to|cgst|sgst|igst|gstin|sold\s*by|payment\s*transaction)\b/i;
 
 const INVOICE_ONLY_PATTERN =
-  /\b(tax\s*invoice|invoice\s*number|invoice\s*date|amount\s*in\s*words|authorized\s*signatory|place\s*of\s*supply|taxable\s*value|total\s*invoice\s*value)\b/i;
+  /\b(tax\s*invoice|invoice\s*number|invoice\s*date|amount\s*in\s*words|authorized\s*signatory|place\s*of\s*supply|taxable\s*value|total\s*invoice\s*value|payment\s*transaction\s*id|pan\s*no|gst\s*registration)\b/i;
 
 const CONTENT_DENSITY = 0.018;
 const BLANK_PAGE_DENSITY = 0.012;
 const INVOICE_LOW_DENSITY = 0.025;
+
+/** Marketplaces that must have a scannable barcode on every kept label crop. */
+function requiresBarcode(platformId?: string) {
+  return platformId === "amazon" || platformId === "flipkart" || platformId === "meesho";
+}
 
 function pdfBoxToCanvasRect(box: Box, pageWidth: number, pageHeight: number, viewport: { width: number; height: number }) {
   const x = (box.left / pageWidth) * viewport.width;
@@ -143,6 +151,7 @@ function refineBoxToInk(
   pageWidth: number,
   pageHeight: number,
   margin: number,
+  options?: { allowTightCrop?: boolean },
 ): Box {
   const rect = pdfBoxToCanvasRect(box, pageWidth, pageHeight, viewport);
   const startX = Math.max(0, Math.floor(rect.x));
@@ -181,9 +190,9 @@ function refineBoxToInk(
 
   if (maxCol - minCol < 8 || maxRow - minRow < 8) return box;
 
-  // Pad ~2% of the region so barcodes / QR aren't clipped by ink detection.
-  const padX = Math.max(2, Math.round((endX - startX) * 0.02));
-  const padY = Math.max(2, Math.round((endY - startY) * 0.02));
+  // Pad so barcodes / QR aren't clipped by ink detection.
+  const padX = Math.max(2, Math.round((endX - startX) * (options?.allowTightCrop ? 0.012 : 0.02)));
+  const padY = Math.max(2, Math.round((endY - startY) * (options?.allowTightCrop ? 0.012 : 0.02)));
 
   const inkLeft = startX + Math.max(0, minCol - padX);
   const inkRight = startX + Math.min(colDark.length - 1, maxCol + padX) + 1;
@@ -195,7 +204,6 @@ function refineBoxToInk(
   const top = pageHeight - (inkTopCanvas / viewport.height) * pageHeight;
   const bottom = pageHeight - (inkBottomCanvas / viewport.height) * pageHeight;
 
-  // Only shrink / modestly expand within the original candidate — never jump across the page.
   const refined: Box = {
     left: Math.max(box.left, left),
     right: Math.min(box.right, right),
@@ -203,10 +211,13 @@ function refineBoxToInk(
     top: Math.min(box.top, top),
   };
 
-  // Reject refinement that collapses the label (half-label bug protection).
   const originalArea = boxArea(box);
   const refinedArea = boxArea(refined);
-  if (refinedArea < originalArea * 0.45 || refined.right - refined.left < pageWidth * 0.2) {
+  // Flipkart/Meesho centered labels can be ~35–50% of a full-width top-band candidate —
+  // allow a tighter crop instead of falling back to the giant box (which then shrinks on 4×6).
+  const minAreaRatio = options?.allowTightCrop ? 0.18 : 0.45;
+  const minWidthRatio = options?.allowTightCrop ? 0.12 : 0.2;
+  if (refinedArea < originalArea * minAreaRatio || refined.right - refined.left < pageWidth * minWidthRatio) {
     return clampBox(box, pageWidth, pageHeight, margin);
   }
 
@@ -248,13 +259,14 @@ function scoreLabelRegion(
   return { score, density, hasLabelText, hasInvoiceText, hasBarcode: barcodeScore > 0 };
 }
 
-/** Returns true when the page is invoice-only (no shipping label content). */
+/** Returns true when the page is invoice-only (no shipping label / barcode content). */
 function isInvoiceOnlyPage(
   scored: { hasLabelText: boolean; hasInvoiceText: boolean; hasBarcode: boolean; density: number }[],
 ) {
-  const anyLabelContent = scored.some(
-    (s) => s.hasLabelText || s.hasBarcode || (s.density > 0.04 && !s.hasInvoiceText),
-  );
+  // Any real shipping label has a barcode. No barcode ⇒ not a label page.
+  if (scored.every((s) => !s.hasBarcode)) return true;
+
+  const anyLabelContent = scored.some((s) => s.hasLabelText || s.hasBarcode);
   if (anyLabelContent) return false;
 
   const allInvoice = scored.every((s) => s.hasInvoiceText && !s.hasLabelText && !s.hasBarcode);
@@ -281,9 +293,19 @@ function generateAutoCandidateBoxes(pageWidth: number, pageHeight: number, setti
     }
   }
   if (isTopSplitStrategy(profile.strategy) || profile.strategy === "auto") {
-    for (const heightPct of [50, 55, 58, 60, 62, 65]) {
-      for (const pair of topSplitBoxes(pageWidth, pageHeight, heightPct, settings.marginPercent ?? 0.5)) {
-        candidates.push(pair.labelBox);
+    if (settings.platformId === "flipkart" || profile.strategy === "flipkart-top-split") {
+      for (const heightPct of [40, 43, 45, 48]) {
+        for (const inset of [22, 25, 27.5, 30]) {
+          for (const pair of topSplitBoxes(pageWidth, pageHeight, heightPct, settings.marginPercent ?? 0.25, inset)) {
+            candidates.push(pair.labelBox);
+          }
+        }
+      }
+    } else {
+      for (const heightPct of [50, 55, 58, 60, 62, 65]) {
+        for (const pair of topSplitBoxes(pageWidth, pageHeight, heightPct, settings.marginPercent ?? 0.5)) {
+          candidates.push(pair.labelBox);
+        }
       }
     }
   }
@@ -346,16 +368,18 @@ function findInvoiceBoxForLabel(labelBox: Box, pageWidth: number, pageHeight: nu
 }
 
 function selectBestLabels(
-  scored: { box: Box; score: number; density: number }[],
+  scored: { box: Box; score: number; density: number; hasBarcode: boolean }[],
   pageArea: number,
   maxLabels: number,
+  requireBarcode: boolean,
 ) {
   const minScore = 0.12;
   const sorted = [...scored].sort((a, b) => b.score - a.score);
-  const selected: { box: Box; score: number; density: number }[] = [];
+  const selected: { box: Box; score: number; density: number; hasBarcode: boolean }[] = [];
 
   for (const candidate of sorted) {
     if (candidate.score < minScore) continue;
+    if (requireBarcode && !candidate.hasBarcode) continue;
 
     const areaRatio = boxArea(candidate.box) / pageArea;
     if (areaRatio > 0.72 || areaRatio < 0.05) continue;
@@ -393,6 +417,8 @@ function validateAndRefinePairs(
   pageWidth: number,
   pageHeight: number,
   margin: number,
+  requireBarcode: boolean,
+  allowTightCrop = false,
 ): { validated: Pair[]; scored: ScoredPair[] } {
   const scored: ScoredPair[] = pairs.map((pair) => {
     const regionText = textItemsInRegion(textContent, pair.labelBox, pageHeight);
@@ -407,10 +433,33 @@ function validateAndRefinePairs(
   const validated: Pair[] = [];
   for (const item of scored) {
     const isBlank = item.density < CONTENT_DENSITY;
+    // Invoice fragments / logo+address panels with no barcode must never become output pages.
+    const missingBarcode = requireBarcode && !item.hasBarcode;
     const isInvoice = item.hasInvoiceText && !item.hasLabelText && !item.hasBarcode;
-    if (isBlank || isInvoice) continue;
+    if (isBlank || missingBarcode || isInvoice) continue;
 
-    const refinedLabel = refineBoxToInk(imageData, viewport, item.pair.labelBox, pageWidth, pageHeight, margin);
+    const refinedLabel = refineBoxToInk(
+      imageData,
+      viewport,
+      item.pair.labelBox,
+      pageWidth,
+      pageHeight,
+      margin,
+      { allowTightCrop },
+    );
+    // Re-check barcode after refine so we didn't crop away the only barcode strip.
+    if (requireBarcode) {
+      const refinedMetrics = scoreLabelRegion(
+        imageData,
+        viewport,
+        refinedLabel,
+        pageWidth,
+        pageHeight,
+        textItemsInRegion(textContent, refinedLabel, pageHeight),
+      );
+      if (!refinedMetrics.hasBarcode) continue;
+    }
+
     validated.push({
       labelBox: refinedLabel,
       invoiceBox: item.pair.invoiceBox,
@@ -445,8 +494,32 @@ function topSplitCandidatePairSets(
   pageHeight: number,
   settings: CropSettings,
   baseHeight: number,
+  platformId?: string,
 ): Pair[][] {
   const marginPct = settings.marginPercent ?? 0.35;
+
+  if (platformId === "flipkart") {
+    const heights = [
+      settings.labelHeightPercent ?? FLIPKART_LABEL_HEIGHT_PERCENT,
+      FLIPKART_LABEL_HEIGHT_PERCENT,
+      40,
+      43,
+      45,
+      48,
+    ].filter((h, i, arr) => h >= 35 && h <= 55 && arr.indexOf(h) === i);
+
+    const insets = [FLIPKART_SIDE_INSET_PERCENT, 25, 28, 30, 22];
+    const sets: Pair[][] = [];
+    for (const h of heights) {
+      for (const inset of insets) {
+        sets.push(topSplitBoxes(pageWidth, pageHeight, h, marginPct, inset));
+      }
+    }
+    // Also include the dedicated Flipkart helper once.
+    sets.unshift(flipkartLabelBoxes(pageWidth, pageHeight, settings));
+    return sets;
+  }
+
   const heights = [
     settings.labelHeightPercent ?? baseHeight,
     baseHeight,
@@ -474,11 +547,13 @@ export async function scanPageForLabels(
 ) {
   const profile = getPlatformLayout(settings.platformId ?? "generic");
   const margin = Math.min(pageWidth, pageHeight) * (Number(settings.marginPercent) / 100);
+  const barcodeRequired = requiresBarcode(settings.platformId);
   const { ctx, viewport } = await renderPage(pdfPage, 2);
   const imageData = ctx.getImageData(0, 0, viewport.width, viewport.height);
 
   if (profile.strategy !== "auto") {
     let candidateSets: Pair[][];
+    const allowTightCrop = profile.strategy === "flipkart-top-split" || profile.strategy === "meesho-top-split";
 
     if (profile.strategy === "amazon-left-column") {
       candidateSets = amazonCandidatePairSets(pageWidth, pageHeight, settings);
@@ -488,6 +563,7 @@ export async function scanPageForLabels(
         pageHeight,
         settings,
         profile.labelHeightPercent,
+        settings.platformId,
       );
     } else {
       candidateSets = [rigidBoxesForPage(pageWidth, pageHeight, profile, settings)];
@@ -505,16 +581,18 @@ export async function scanPageForLabels(
         pageWidth,
         pageHeight,
         margin,
+        barcodeRequired,
+        allowTightCrop,
       );
 
       if (validated.length === 0) continue;
 
-      // Score from original candidates that passed validation (pre-refine indices).
       const acceptedIndexes = new Set<number>();
       for (let i = 0; i < scored.length; i += 1) {
         const isBlank = scored[i].density < CONTENT_DENSITY;
+        const missingBarcode = barcodeRequired && !scored[i].hasBarcode;
         const isInvoice = scored[i].hasInvoiceText && !scored[i].hasLabelText && !scored[i].hasBarcode;
-        if (!isBlank && !isInvoice) acceptedIndexes.add(i);
+        if (!isBlank && !missingBarcode && !isInvoice) acceptedIndexes.add(i);
       }
 
       const totalScore = [...acceptedIndexes].reduce(
@@ -522,38 +600,21 @@ export async function scanPageForLabels(
         0,
       );
 
-      // Prefer more complete labels (2-up when both halves have content).
-      const ranked = totalScore + validated.length * 0.15;
+      // Prefer tighter Flipkart crops (higher density / smaller area with barcode).
+      const areaPenalty = validated.reduce((sum, pair) => {
+        const ratio = boxArea(pair.labelBox) / (pageWidth * pageHeight);
+        return sum + (ratio > 0.35 ? -0.25 : ratio < 0.22 ? 0.15 : 0);
+      }, 0);
+
+      const ranked = totalScore + validated.length * 0.15 + areaPenalty;
       if (ranked > bestScore) {
         bestScore = ranked;
         bestValidated = validated;
       }
     }
 
-    if (bestValidated.length > 0) return bestValidated;
-
-    // Last resort: accept any rigid pair with ink if page isn't invoice-only.
-    const fallbackPairs = rigidBoxesForPage(pageWidth, pageHeight, profile, settings);
-    const { validated, scored } = validateAndRefinePairs(
-      fallbackPairs,
-      imageData,
-      viewport,
-      textContent,
-      pageWidth,
-      pageHeight,
-      margin,
-    );
-    if (validated.length > 0) return validated;
-
-    const hasAnyContent = scored.some((s) => s.density > 0.02);
-    if (hasAnyContent && !isInvoiceOnlyPage(scored)) {
-      return fallbackPairs
-        .filter((_, i) => scored[i].density > 0.02)
-        .map((pair) => ({
-          labelBox: refineBoxToInk(imageData, viewport, pair.labelBox, pageWidth, pageHeight, margin),
-          invoiceBox: pair.invoiceBox,
-        }));
-    }
+    // No barcode-backed labels ⇒ skip the page (invoice / payment / logo fragments).
+    return bestValidated;
   }
 
   // Auto-detect fallback for generic/custom platforms.
@@ -574,18 +635,13 @@ export async function scanPageForLabels(
     scored.push({ box, ...metrics });
   }
 
-  let selected = selectBestLabels(scored, pageArea, profile.labelsPerPage);
-
-  if (selected.length === 0) {
-    const fallback = scored
-      .filter((s) => s.density > 0.035 && !s.hasInvoiceText)
-      .sort((a, b) => b.density - a.density)
-      .slice(0, profile.labelsPerPage);
-    selected = fallback;
-  }
+  const selected = selectBestLabels(scored, pageArea, profile.labelsPerPage, barcodeRequired);
+  const allowTightCrop = barcodeRequired;
 
   return selected.map((item) => {
-    const refined = refineBoxToInk(imageData, viewport, item.box, pageWidth, pageHeight, margin);
+    const refined = refineBoxToInk(imageData, viewport, item.box, pageWidth, pageHeight, margin, {
+      allowTightCrop,
+    });
     return {
       labelBox: refined,
       invoiceBox: findInvoiceBoxForLabel(refined, pageWidth, pageHeight, margin, settings),
@@ -608,7 +664,22 @@ export async function regionHasContent(
   return density > CONTENT_DENSITY;
 }
 
-/** Detect if an entire page is invoice-only or blank — should be skipped entirely. */
+/** True when the crop region contains barcode-like ink patterns (AWB / QR strips). */
+export async function regionHasBarcode(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pdfPage: any,
+  box: Box,
+  pageWidth: number,
+  pageHeight: number,
+) {
+  const { ctx, viewport } = await renderPage(pdfPage, 2);
+  const rect = pdfBoxToCanvasRect(box, pageWidth, pageHeight, viewport);
+  const imageData = ctx.getImageData(0, 0, viewport.width, viewport.height);
+  const { barcodeScore } = scoreRegionPixels(imageData, viewport.width, rect);
+  return barcodeScore > 0;
+}
+
+/** Detect if an entire page is invoice-only, barcode-less, or blank — skip entirely. */
 export async function isPageSkippable(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   pdfPage: any,
@@ -630,8 +701,8 @@ export async function isPageSkippable(
 
   if (density < BLANK_PAGE_DENSITY) return true;
 
-  // Dense invoice pages without barcodes/shipping markers.
-  if (hasInvoiceMarkers && barcodeScore === 0 && !hasLabelMarkers && density < 0.08) {
+  // Invoice / payment / seller-info fragments with no shipping barcode.
+  if (barcodeScore === 0 && (hasInvoiceMarkers || !hasLabelMarkers)) {
     return true;
   }
 
