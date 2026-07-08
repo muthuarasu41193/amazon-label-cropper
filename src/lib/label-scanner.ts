@@ -46,13 +46,24 @@ function requiresBarcode(platformId?: string) {
 
 /**
  * Invoice / seller-info identity without a strong shipping-label marker.
- * E-invoice QRs and dense tables often fake a barcode score — invoice text wins.
+ * Must be combined carefully with barcode checks — e-invoice QRs can fake barcodes.
  */
 function isInvoiceIdentityWithoutShipping(text: string) {
   const hasInvoice =
     INVOICE_ONLY_PATTERN.test(text) || AMAZON_INVOICE_FRAGMENT_PATTERN.test(text);
   if (!hasInvoice) return false;
   return !STRONG_SHIPPING_MARKER_PATTERN.test(text);
+}
+
+/**
+ * Drop Sold By / tax-invoice crops that have no shipping barcode.
+ * Never drop a barcode-backed crop — user wants every shipping label with a barcode kept.
+ * (E-invoice QR false positives are handled by the linear-strip barcode heuristic + page gates.)
+ */
+function isUnwantedInvoiceRegion(text: string, hasBarcode: boolean) {
+  if (hasBarcode) return false;
+  if (STRONG_SHIPPING_MARKER_PATTERN.test(text)) return false;
+  return isInvoiceIdentityWithoutShipping(text);
 }
 
 function pdfBoxToCanvasRect(box: Box, pageWidth: number, pageHeight: number, viewport: { width: number; height: number }) {
@@ -134,6 +145,9 @@ function scoreRegionPixels(imageData: ImageData, canvasWidth: number, rect: { x:
   let darkPixels = 0;
   let totalPixels = 0;
   let barcodeRows = 0;
+  let maxRun = 0;
+  let currentRun = 0;
+  const rowWidth = endX - startX;
 
   for (let py = startY; py < endY; py++) {
     let rowDark = 0;
@@ -152,15 +166,23 @@ function scoreRegionPixels(imageData: ImageData, canvasWidth: number, rect: { x:
       prevDark = isDark;
     }
 
-    totalPixels += endX - startX;
-    // Real AWB barcodes have many dark/light transitions across most of the row.
-    // Logos / text rarely hit this density, which avoids false positives.
-    if (rowTransitions > 16 && rowDark > (endX - startX) * 0.18) barcodeRows++;
+    totalPixels += rowWidth;
+    // Real AWB barcodes span most of the crop width as a long strip of transitions.
+    // Square e-invoice QRs are narrower relative to a full label crop and form short runs.
+    const isBarcodeRow = rowTransitions > 18 && rowDark > rowWidth * 0.2;
+    if (isBarcodeRow) {
+      barcodeRows++;
+      currentRun++;
+      if (currentRun > maxRun) maxRun = currentRun;
+    } else {
+      currentRun = 0;
+    }
   }
 
   const density = totalPixels > 0 ? darkPixels / totalPixels : 0;
-  // Require a sustained barcode strip (not 2 noisy logo rows).
-  const barcodeScore = barcodeRows >= 8 ? 0.35 : barcodeRows >= 5 ? 0.2 : 0;
+  // Prefer a contiguous horizontal strip (linear AWB) over a short QR cluster.
+  const barcodeScore =
+    maxRun >= 10 || barcodeRows >= 12 ? 0.35 : maxRun >= 6 || barcodeRows >= 8 ? 0.2 : 0;
 
   return { density, barcodeScore };
 }
@@ -284,27 +306,20 @@ function scoreLabelRegion(
   return { score, density, hasLabelText, hasInvoiceText, hasBarcode: barcodeScore >= 0.2 };
 }
 
-/** Returns true when the page is invoice-only (no shipping label content). */
+/** Returns true when none of the candidate crops are barcode-backed shipping labels. */
 function isInvoiceOnlyPage(
   scored: {
     hasLabelText: boolean;
     hasInvoiceText: boolean;
     hasBarcode: boolean;
     density: number;
-    isInvoiceIdentity?: boolean;
   }[],
 ) {
-  // Invoice identity (Sold By / PAN / GST) wins over QR false-positive barcodes.
-  if (scored.length > 0 && scored.every((s) => s.isInvoiceIdentity)) return true;
+  // Any barcode in a label candidate ⇒ keep scoring individuals; never drop the page wholesale.
+  if (scored.some((s) => s.hasBarcode)) return false;
 
-  // Any real shipping label has a barcode. No barcode ⇒ not a label page.
+  // No barcode ⇒ not a shipping-label page (blank / invoice / seller panel).
   if (scored.every((s) => !s.hasBarcode)) return true;
-
-  const anyRealLabel = scored.some((s) => s.hasLabelText && !s.isInvoiceIdentity);
-  if (anyRealLabel) return false;
-
-  // Barcodes alone are not enough — e-invoice QRs look like barcodes.
-  if (scored.every((s) => s.hasInvoiceText && !s.hasLabelText)) return true;
 
   const allInvoice = scored.every((s) => s.hasInvoiceText && !s.hasLabelText && !s.hasBarcode);
   const lowDensity = scored.every((s) => s.density < INVOICE_LOW_DENSITY);
@@ -443,7 +458,6 @@ type ScoredPair = {
   hasLabelText: boolean;
   hasInvoiceText: boolean;
   hasBarcode: boolean;
-  isInvoiceIdentity: boolean;
 };
 
 function validateAndRefinePairs(
@@ -461,11 +475,7 @@ function validateAndRefinePairs(
   const scored: ScoredPair[] = pairs.map((pair) => {
     const regionText = textItemsInRegion(textContent, pair.labelBox, pageHeight);
     const metrics = scoreLabelRegion(imageData, viewport, pair.labelBox, pageWidth, pageHeight, regionText);
-    return {
-      pair,
-      ...metrics,
-      isInvoiceIdentity: isInvoiceIdentityWithoutShipping(regionText),
-    };
+    return { pair, ...metrics };
   });
 
   if (isInvoiceOnlyPage(scored)) {
@@ -474,9 +484,10 @@ function validateAndRefinePairs(
 
   const validated: Pair[] = [];
   for (const item of scored) {
+    const regionText = textItemsInRegion(textContent, item.pair.labelBox, pageHeight);
     const isBlank = item.density < CONTENT_DENSITY;
-    // Sold By / PAN / GST (+ optional e-invoice QR) must never become output pages.
-    if (item.isInvoiceIdentity) continue;
+    // Keep every barcode-backed shipping label. Drop Sold By / invoice panels only when no barcode.
+    if (isUnwantedInvoiceRegion(regionText, item.hasBarcode)) continue;
     const missingBarcode = requireBarcode && !item.hasBarcode;
     const isInvoice = item.hasInvoiceText && !item.hasLabelText && !item.hasBarcode;
     if (isBlank || missingBarcode || isInvoice) continue;
@@ -491,7 +502,6 @@ function validateAndRefinePairs(
       { allowTightCrop },
     );
     const refinedText = textItemsInRegion(textContent, refinedLabel, pageHeight);
-    if (isInvoiceIdentityWithoutShipping(refinedText)) continue;
 
     // Re-check barcode after refine so we didn't crop away the only barcode strip.
     if (requireBarcode) {
@@ -504,6 +514,9 @@ function validateAndRefinePairs(
         refinedText,
       );
       if (!refinedMetrics.hasBarcode) continue;
+      if (isUnwantedInvoiceRegion(refinedText, refinedMetrics.hasBarcode)) continue;
+    } else if (isUnwantedInvoiceRegion(refinedText, item.hasBarcode)) {
+      continue;
     }
 
     validated.push({
@@ -635,7 +648,8 @@ export async function scanPageForLabels(
 
       const acceptedIndexes = new Set<number>();
       for (let i = 0; i < scored.length; i += 1) {
-        if (scored[i].isInvoiceIdentity) continue;
+        const regionText = textItemsInRegion(textContent, scored[i].pair.labelBox, pageHeight);
+        if (isUnwantedInvoiceRegion(regionText, scored[i].hasBarcode)) continue;
         const isBlank = scored[i].density < CONTENT_DENSITY;
         const missingBarcode = barcodeRequired && !scored[i].hasBarcode;
         const isInvoice = scored[i].hasInvoiceText && !scored[i].hasLabelText && !scored[i].hasBarcode;
@@ -679,7 +693,7 @@ export async function scanPageForLabels(
   for (const box of candidates) {
     const regionText = textItemsInRegion(textContent, box, pageHeight);
     const metrics = scoreLabelRegion(imageData, viewport, box, pageWidth, pageHeight, regionText);
-    if (isInvoiceIdentityWithoutShipping(regionText)) continue;
+    if (isUnwantedInvoiceRegion(regionText, metrics.hasBarcode)) continue;
     scored.push({ box, ...metrics });
   }
 
@@ -729,7 +743,7 @@ export async function regionHasBarcode(
 
 /**
  * Detect if a crop region is an Amazon seller/invoice fragment (logo + Sold By + PAN).
- * E-invoice QR codes often look like barcodes — invoice text without Ship To / AWB wins.
+ * Barcode-backed crops are never treated as invoice fragments.
  */
 export async function regionLooksLikeInvoiceFragment(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -741,18 +755,19 @@ export async function regionLooksLikeInvoiceFragment(
   textContent: any,
 ) {
   const regionText = textItemsInRegion(textContent, box, pageHeight);
-  if (isInvoiceIdentityWithoutShipping(regionText)) return true;
-
-  const hasInvoiceFragment = AMAZON_INVOICE_FRAGMENT_PATTERN.test(regionText);
-  const hasShippingMarkers = STRONG_SHIPPING_MARKER_PATTERN.test(regionText);
-  if (!hasInvoiceFragment) return false;
-  if (hasShippingMarkers) return false;
+  if (STRONG_SHIPPING_MARKER_PATTERN.test(regionText)) return false;
 
   const hasBarcode = await regionHasBarcode(pdfPage, box, pageWidth, pageHeight);
-  return !hasBarcode;
+  if (hasBarcode) return false;
+
+  return isInvoiceIdentityWithoutShipping(regionText);
 }
 
-/** Detect if an entire page is invoice-only, barcode-less, or blank — skip entirely. */
+/**
+ * Skip only pages with no shipping barcode in the label column.
+ * Do NOT use full-page invoice text — Amazon 2-up pages have invoices on the right
+ * beside real left-column barcodes, and those labels must still be cropped.
+ */
 export async function isPageSkippable(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   pdfPage: any,
@@ -762,30 +777,37 @@ export async function isPageSkippable(
   textContent: any,
 ) {
   const pageText = fullPageText(textContent, pageWidth, pageHeight);
-
-  // Pure invoice / seller-info pages win even when an e-invoice QR fakes a barcode score,
-  // and even when the invoice says "Deliver To" (not a shipping label).
-  if (isInvoiceIdentityWithoutShipping(pageText)) return true;
-
-  const hasInvoiceMarkers = INVOICE_ONLY_PATTERN.test(pageText) || AMAZON_INVOICE_FRAGMENT_PATTERN.test(pageText);
   const hasStrongShipping = STRONG_SHIPPING_MARKER_PATTERN.test(pageText);
-  const hasLabelMarkers = hasStrongShipping || LABEL_TEXT_PATTERN.test(pageText);
-
-  if (hasInvoiceMarkers && !hasLabelMarkers) return true;
+  const hasInvoiceMarkers = INVOICE_ONLY_PATTERN.test(pageText) || AMAZON_INVOICE_FRAGMENT_PATTERN.test(pageText);
 
   const { ctx, viewport } = await renderPage(pdfPage, 1.5);
   const imageData = ctx.getImageData(0, 0, viewport.width, viewport.height);
+
+  // Prefer the left label column for Amazon-style layouts (~50% width).
+  // Right-column invoices / e-invoice QRs must not decide whether labels are kept.
+  const labelColumnWidth = pageWidth * 0.52;
+  const labelColumnRect = pdfBoxToCanvasRect(
+    { left: 0, bottom: 0, right: labelColumnWidth, top: pageHeight },
+    pageWidth,
+    pageHeight,
+    viewport,
+  );
+  const labelColumnScore = scoreRegionPixels(imageData, viewport.width, labelColumnRect);
+
+  // Any barcode strip in the label column ⇒ keep page and crop those labels.
+  if (labelColumnScore.barcodeScore >= 0.2) return false;
+  if (hasStrongShipping) return false;
+
   const fullRect = { x: 0, y: 0, w: viewport.width, h: viewport.height };
-  const { density, barcodeScore } = scoreRegionPixels(imageData, viewport.width, fullRect);
+  const { density } = scoreRegionPixels(imageData, viewport.width, fullRect);
 
   if (density < BLANK_PAGE_DENSITY) return true;
 
-  // Invoice / payment / seller-info fragments with no shipping barcode.
-  if (barcodeScore < 0.2 && (hasInvoiceMarkers || !hasStrongShipping)) {
-    return true;
-  }
+  // Invoice / seller-info pages with no label-column barcode.
+  if (hasInvoiceMarkers) return true;
 
-  return false;
+  // No barcode, no shipping markers — unwanted / blank-ish page.
+  return true;
 }
 
 /**
