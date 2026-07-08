@@ -59,7 +59,8 @@ export function CropControls({
               Rigid platform scan
             </div>
             <p className="mt-0.5 text-xs text-muted">
-              Uses official {platform.name} layout coordinates with barcode and content validation.
+              Official {platform.name} coordinates with ink-boundary scan, barcode checks, and invoice-page removal.
+              Amazon / Flipkart / Meesho are also auto-detected from PDF text.
             </p>
           </div>
         </label>

@@ -190,21 +190,29 @@ function CropPageContent() {
       const onProgress = (p: CropProgress) => {
         setProgress(p.percent);
         const label =
-          p.phase === "scanning"
-            ? `Scanning page ${p.page ?? ""} of ${p.total ?? ""}…`
-            : p.phase === "cropping"
-              ? `Cropping page ${p.page ?? ""} of ${p.total ?? ""}…`
-              : p.phase === "loading"
-                ? "Loading PDF…"
-                : "Finishing…";
+          p.phase === "detecting"
+            ? "Detecting marketplace…"
+            : p.phase === "scanning"
+              ? `Scanning page ${p.page ?? ""} of ${p.total ?? ""}…`
+              : p.phase === "cropping"
+                ? `Cropping page ${p.page ?? ""} of ${p.total ?? ""}…`
+                : p.phase === "loading"
+                  ? "Loading PDF…"
+                  : "Finishing…";
         setProgressLabel(label);
         updateQueueItem(item.id, { progress: p.percent, progressLabel: label });
       };
 
       try {
-        const { outputBytes, pageCount, labelsAdded: count } = await createCroppedPdf(item.file, settings, onProgress);
+        const {
+          outputBytes,
+          pageCount,
+          labelsAdded: count,
+          detectedPlatformId,
+        } = await createCroppedPdf(item.file, settings, onProgress);
         const blob = new Blob([Uint8Array.from(outputBytes)], { type: "application/pdf" });
         const url = URL.createObjectURL(blob);
+        const usedPlatform = detectedPlatformId || platform.id;
 
         updateQueueItem(item.id, {
           status: "done",
@@ -218,10 +226,14 @@ function CropPageContent() {
         setCroppedBlob(blob);
         setPreviewUrl(url);
         setLabelsAdded(count);
-        setDownloadName(item.file.name.replace(/\.pdf$/i, "") + `-${platform.id}-labels.pdf`);
+        setDownloadName(item.file.name.replace(/\.pdf$/i, "") + `-${usedPlatform}-labels.pdf`);
+        const detectNote =
+          detectedPlatformId && detectedPlatformId !== platform.id
+            ? ` Detected ${detectedPlatformId} layout.`
+            : "";
         setStatus({
           title: "Cropped PDF ready",
-          detail: `${count} labels from ${pageCount} source pages.`,
+          detail: `${count} labels from ${pageCount} source pages.${detectNote}`,
           error: false,
         });
         setSuccessDetail(`${count} labels from ${pageCount} source pages`);

@@ -1,8 +1,14 @@
 import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 import * as pdfjs from "pdfjs-dist";
 import { resolveOutputSize } from "./label-presets";
-import { getPlatformLayout, rigidBoxesForPage } from "./platform-layouts";
-import { isPageSkippable, regionHasContent, scanPageForLabels } from "./label-scanner";
+import { applyPlatformLayoutToSettings, getPlatformLayout, rigidBoxesForPage, topSplitY } from "./platform-layouts";
+import {
+  detectPlatformFromPdfJs,
+  isPageSkippable,
+  regionHasContent,
+  scanPageForLabels,
+  shouldAutoDetectPlatform,
+} from "./label-scanner";
 
 export type CropSettings = {
   platformId: string;
@@ -76,22 +82,23 @@ function pairedBoxesForPage(page: PDFPage, settings: CropSettings): Pair[] {
   }
 
   if (preset === "top-half" || preset === "top-split") {
+    // labelHeightPercent = height of the TOP band (from page top).
     const labelHeightPct = settings.labelHeightPercent ?? profile.labelHeightPercent;
-    const splitY = height * (labelHeightPct / 100);
+    const splitY = topSplitY(height, labelHeightPct);
     return [
       {
         labelBox: { left: margin, bottom: splitY + margin, right: width - margin, top: height - margin },
-        invoiceBox: { left: margin, bottom: margin, right: width - margin, top: splitY - margin },
+        invoiceBox: { left: margin, bottom: margin, right: width - margin, top: Math.max(margin, splitY - margin) },
       },
     ];
   }
 
   if (preset === "bottom-half") {
     const labelHeightPct = settings.labelHeightPercent ?? 50;
-    const splitY = height * (labelHeightPct / 100);
+    const splitY = topSplitY(height, labelHeightPct);
     return [
       {
-        labelBox: { left: margin, bottom: margin, right: width - margin, top: splitY - margin },
+        labelBox: { left: margin, bottom: margin, right: width - margin, top: Math.max(margin, splitY - margin) },
         invoiceBox: { left: margin, bottom: splitY + margin, right: width - margin, top: height - margin },
       },
     ];
@@ -431,21 +438,43 @@ export async function createCroppedPdf(
   const boldFont = await outputPdf.embedFont(StandardFonts.HelveticaBold);
   const sourcePages = sourcePdf.getPages();
 
+  // Always load pdf.js for marketplace PDFs so invoice pages can be skipped and
+  // Amazon / Flipkart / Meesho can be auto-detected from text markers.
+  const needsPdfJs =
+    settings.smartScan ||
+    settings.includeInvoiceText ||
+    shouldAutoDetectPlatform(settings.platformId ?? "generic");
+
   let pdfJsDoc = null;
-  if (settings.smartScan || settings.includeInvoiceText) {
+  if (needsPdfJs) {
     initPdfJsWorker();
     pdfJsDoc = await pdfjs.getDocument({ data: bytes.slice(0) }).promise;
   }
 
+  let effectiveSettings = { ...settings };
+
+  if (pdfJsDoc && shouldAutoDetectPlatform(settings.platformId ?? "generic")) {
+    onProgress?.({ phase: "detecting", percent: 8 });
+    const detected = await detectPlatformFromPdfJs(pdfJsDoc, 3);
+    if (detected && detected !== settings.platformId) {
+      // Keep user toggles (product text, blank skip, scan) but switch layout geometry.
+      effectiveSettings = applyPlatformLayoutToSettings(detected, {
+        ...settings,
+        platformId: detected,
+        includeInvoiceText: detected === "amazon" ? settings.includeInvoiceText : false,
+      });
+    }
+  }
+
   onProgress?.({ phase: "scanning", percent: 10 });
-  const allPairs = await resolvePagePairs(sourcePages, settings, pdfJsDoc, onProgress);
-  const productDetails = await extractProductDetails(bytes, sourcePages, allPairs, settings);
+  const allPairs = await resolvePagePairs(sourcePages, effectiveSettings, pdfJsDoc, onProgress);
+  const productDetails = await extractProductDetails(bytes, sourcePages, allPairs, effectiveSettings);
   let labelsAdded = 0;
   let detailsIndex = 0;
 
   onProgress?.({ phase: "cropping", percent: 65 });
 
-  const showProductInfo = settings.includeInvoiceText && settings.platformId === "amazon";
+  const showProductInfo = effectiveSettings.includeInvoiceText && effectiveSettings.platformId === "amazon";
 
   for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
     const pairs = allPairs[pageIndex];
@@ -455,19 +484,19 @@ export async function createCroppedPdf(
       const details = productDetails[detailsIndex] || null;
       detailsIndex += 1;
 
-      if (await looksBlank(sourcePdf, pdfJsDoc, pageIndex, pair.labelBox, settings, width, height)) continue;
+      if (await looksBlank(sourcePdf, pdfJsDoc, pageIndex, pair.labelBox, effectiveSettings, width, height)) continue;
 
       const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
-      const target = getOutputSize(label.width, label.height, settings);
+      const target = getOutputSize(label.width, label.height, effectiveSettings);
       const page = outputPdf.addPage([target.width, target.height]);
       const infoAreaHeight =
-        showProductInfo && settings.pageSize !== "source" ? Math.min(132, target.height * 0.31) : 0;
+        showProductInfo && effectiveSettings.pageSize !== "source" ? Math.min(132, target.height * 0.31) : 0;
       const labelAreaHeight = target.height - infoAreaHeight;
 
       page.drawRectangle({ x: 0, y: 0, width: target.width, height: target.height, color: rgb(1, 1, 1) });
 
       const scale =
-        settings.fitMode === "cover"
+        effectiveSettings.fitMode === "cover"
           ? Math.max(target.width / label.width, labelAreaHeight / label.height)
           : Math.min(target.width / label.width, labelAreaHeight / label.height);
       const drawWidth = label.width * scale;
@@ -494,13 +523,18 @@ export async function createCroppedPdf(
 
   if (!labelsAdded) {
     const hints: string[] = [];
-    if (settings.skipBlank) hints.push("turn off blank-label skipping");
-    if (settings.smartScan) hints.push("try manual layout mode");
+    if (effectiveSettings.skipBlank) hints.push("turn off blank-label skipping");
+    if (effectiveSettings.smartScan) hints.push("try manual layout mode");
     const hint = hints.length ? ` Try: ${hints.join(", ")}.` : "";
     throw new Error(`No labels were detected.${hint}`);
   }
 
   onProgress?.({ phase: "done", percent: 100 });
   const outputBytes = await outputPdf.save();
-  return { outputBytes, pageCount: sourcePages.length, labelsAdded };
+  return {
+    outputBytes,
+    pageCount: sourcePages.length,
+    labelsAdded,
+    detectedPlatformId: effectiveSettings.platformId,
+  };
 }
