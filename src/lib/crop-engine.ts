@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 import * as pdfjs from "pdfjs-dist";
+import { regionHasContent, scanPageForLabels } from "./label-scanner";
 
 export type CropSettings = {
   cropPreset: string;
@@ -9,6 +10,14 @@ export type CropSettings = {
   fitMode: string;
   skipBlank: boolean;
   includeInvoiceText: boolean;
+  smartScan: boolean;
+};
+
+export type CropProgress = {
+  phase: string;
+  percent: number;
+  page?: number;
+  total?: number;
 };
 
 type Box = { left: number; bottom: number; right: number; top: number };
@@ -331,8 +340,24 @@ function drawProductDetails(
   }
 }
 
-async function looksBlank(sourcePdf: PDFDocument, pageIndex: number, box: Box, settings: CropSettings) {
+async function looksBlank(
+  sourcePdf: PDFDocument,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pdfJsDoc: any,
+  pageIndex: number,
+  box: Box,
+  settings: CropSettings,
+  pageWidth: number,
+  pageHeight: number,
+) {
   if (!settings.skipBlank) return false;
+
+  if (pdfJsDoc && settings.smartScan) {
+    const pdfPage = await pdfJsDoc.getPage(pageIndex + 1);
+    const hasContent = await regionHasContent(pdfPage, box, pageWidth, pageHeight);
+    return !hasContent;
+  }
+
   const probePdf = await PDFDocument.create();
   const embedded = await probePdf.embedPage(sourcePdf.getPages()[pageIndex], box);
   const page = probePdf.addPage([embedded.width, embedded.height]);
@@ -341,27 +366,81 @@ async function looksBlank(sourcePdf: PDFDocument, pageIndex: number, box: Box, s
   return bytes.length < 1400;
 }
 
-export async function createCroppedPdf(file: File, settings: CropSettings) {
+async function resolvePagePairs(
+  sourcePages: PDFPage[],
+  settings: CropSettings,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pdfJsDoc: any,
+  onProgress?: (progress: CropProgress) => void,
+) {
+  const allPairs: Pair[][] = [];
+
+  for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
+    const page = sourcePages[pageIndex];
+    const { width, height } = page.getSize();
+
+    onProgress?.({
+      phase: "scanning",
+      page: pageIndex + 1,
+      total: sourcePages.length,
+      percent: Math.round(((pageIndex + 0.5) / sourcePages.length) * 60),
+    });
+
+    if (settings.smartScan && pdfJsDoc) {
+      const pdfPage = await pdfJsDoc.getPage(pageIndex + 1);
+      const textContent = await pdfPage.getTextContent();
+      const detected = await scanPageForLabels(pdfPage, width, height, textContent, settings);
+
+      if (detected.length > 0) {
+        allPairs.push(detected);
+        continue;
+      }
+    }
+
+    allPairs.push(pairedBoxesForPage(page, settings));
+  }
+
+  return allPairs;
+}
+
+export async function createCroppedPdf(
+  file: File,
+  settings: CropSettings,
+  onProgress?: (progress: CropProgress) => void,
+) {
   const bytes = await file.arrayBuffer();
+  onProgress?.({ phase: "loading", percent: 5 });
+
   const sourcePdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const outputPdf = await PDFDocument.create();
   const textFont = await outputPdf.embedFont(StandardFonts.Helvetica);
   const boldFont = await outputPdf.embedFont(StandardFonts.HelveticaBold);
   const sourcePages = sourcePdf.getPages();
-  const allPairs = sourcePages.map((page) => pairedBoxesForPage(page, settings));
+
+  let pdfJsDoc = null;
+  if (settings.smartScan || settings.includeInvoiceText) {
+    initPdfJsWorker();
+    pdfJsDoc = await pdfjs.getDocument({ data: bytes.slice(0) }).promise;
+  }
+
+  onProgress?.({ phase: "scanning", percent: 10 });
+  const allPairs = await resolvePagePairs(sourcePages, settings, pdfJsDoc, onProgress);
   const productDetails = await extractProductDetails(bytes, sourcePages, allPairs, settings);
   let labelsAdded = 0;
   let detailsIndex = 0;
 
+  onProgress?.({ phase: "cropping", percent: 65 });
+
   for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
     const pairs = allPairs[pageIndex];
+    const { width, height } = sourcePages[pageIndex].getSize();
 
     for (const pair of pairs) {
       const details = productDetails[detailsIndex] || null;
       detailsIndex += 1;
 
       if (settings.includeInvoiceText && !isDetected(details)) continue;
-      if (await looksBlank(sourcePdf, pageIndex, pair.labelBox, settings)) continue;
+      if (await looksBlank(sourcePdf, pdfJsDoc, pageIndex, pair.labelBox, settings, width, height)) continue;
 
       const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
       const target = getOutputSize(label.width, label.height, settings.pageSize);
@@ -389,12 +468,24 @@ export async function createCroppedPdf(file: File, settings: CropSettings) {
       drawProductDetails(page, details, textFont, boldFont, target, infoAreaHeight);
       labelsAdded += 1;
     }
+
+    onProgress?.({
+      phase: "cropping",
+      page: pageIndex + 1,
+      total: sourcePages.length,
+      percent: 65 + Math.round(((pageIndex + 1) / sourcePages.length) * 30),
+    });
   }
 
   if (!labelsAdded) {
-    throw new Error("No labels were detected. Try turning off blank-label skipping or reducing margin trim.");
+    const hints: string[] = [];
+    if (settings.skipBlank) hints.push("turn off blank-label skipping");
+    if (settings.smartScan) hints.push("try manual layout mode");
+    const hint = hints.length ? ` Try: ${hints.join(", ")}.` : "";
+    throw new Error(`No labels were detected.${hint}`);
   }
 
+  onProgress?.({ phase: "done", percent: 100 });
   const outputBytes = await outputPdf.save();
   return { outputBytes, pageCount: sourcePages.length, labelsAdded };
 }

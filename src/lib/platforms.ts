@@ -14,6 +14,7 @@ export type Platform = {
     marginPercent: number;
     includeInvoiceText: boolean;
     skipBlank: boolean;
+    smartScan: boolean;
   };
   uploadHint: string;
   layoutNote: string;
@@ -36,6 +37,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 1,
       includeInvoiceText: true,
       skipBlank: true,
+      smartScan: true,
     },
     uploadHint: "Upload the official Amazon multi-label shipping PDF.",
     layoutNote: "Labels on the left, tax invoices on the right (default).",
@@ -56,6 +58,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 1,
       includeInvoiceText: false,
       skipBlank: true,
+      smartScan: true,
     },
     uploadHint: "Upload eBay bulk shipping label PDF from Seller Hub.",
     layoutNote: "Most eBay exports use a 2-column layout — adjust if columns are reversed.",
@@ -76,6 +79,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: false,
+      smartScan: false,
     },
     uploadHint: "Upload Shopify or app-generated multi-label PDF.",
     layoutNote: "DTC PDFs vary — try top-half or source size if needed.",
@@ -96,6 +100,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: false,
+      smartScan: false,
     },
     uploadHint: "Upload WooCommerce shipping label PDF from your plugin or carrier app.",
     layoutNote: "Plugin exports differ — switch to top-half if labels stack vertically.",
@@ -116,6 +121,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 1,
       includeInvoiceText: true,
       skipBlank: true,
+      smartScan: true,
     },
     uploadHint: "Upload Etsy bulk shipping label PDF from the orders page.",
     layoutNote: "Labels left, order details right — standard Etsy 2-up layout.",
@@ -136,6 +142,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 1,
       includeInvoiceText: true,
       skipBlank: true,
+      smartScan: true,
     },
     uploadHint: "Upload Flipkart seller panel shipping PDF export.",
     layoutNote: "Most exports use left-column labels with invoice on the right.",
@@ -156,6 +163,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 0.75,
       includeInvoiceText: true,
       skipBlank: true,
+      smartScan: true,
     },
     uploadHint: "Upload Meesho bulk shipping label PDF.",
     layoutNote: "Adjust left width if labels look clipped on your template.",
@@ -176,6 +184,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: true,
+      smartScan: true,
     },
     uploadHint: "Upload FedEx bulk shipping label PDF.",
     layoutNote: "Multi-label FedEx PDFs often use side-by-side columns.",
@@ -196,6 +205,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: true,
+      smartScan: true,
     },
     uploadHint: "Upload UPS bulk shipping label PDF.",
     layoutNote: "Try top-half if your export stacks labels vertically.",
@@ -216,6 +226,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: true,
+      smartScan: true,
     },
     uploadHint: "Upload DHL bulk shipping label PDF.",
     layoutNote: "International DHL labels may need margin tweaks for barcodes.",
@@ -236,6 +247,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: true,
+      smartScan: true,
     },
     uploadHint: "Upload USPS bulk shipping label PDF.",
     layoutNote: "USPS PDFs are often 2-per-page on letter size.",
@@ -256,6 +268,7 @@ export const PLATFORMS: Record<string, Platform> = {
       marginPercent: 1,
       includeInvoiceText: true,
       skipBlank: true,
+      smartScan: true,
     },
     uploadHint: "Upload any marketplace or courier multi-label PDF.",
     layoutNote: "Pick the source layout that matches your file.",
@@ -296,6 +309,25 @@ export const FEATURED_PLATFORMS = [
   "ups",
   "usps",
 ] as const;
+
+export const SIDEBAR_GROUPS = [
+  {
+    label: "Marketplaces",
+    platforms: ["amazon", "ebay", "shopify", "woocommerce", "etsy", "flipkart", "meesho"] as const,
+  },
+  {
+    label: "Carriers",
+    platforms: ["fedex", "ups", "dhl", "usps"] as const,
+  },
+  {
+    label: "Other",
+    platforms: ["generic"] as const,
+  },
+] as const;
+
+export const SIDEBAR_LABELS: Record<string, string> = {
+  generic: "Custom PDF",
+};
 
 export const PLATFORM_DISPLAY_NAMES: Record<string, string> = {
   amazon: "Amazon",

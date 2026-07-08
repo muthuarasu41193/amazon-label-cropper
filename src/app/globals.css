@@ -29,3 +29,18 @@ body {
 ::selection {
   background-color: rgb(37 99 235 / 0.15);
 }
+
+/* Dashboard scrollbar */
+.overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+}
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
