@@ -22,11 +22,11 @@ const INVOICE_TEXT_PATTERN =
   /\b(description|invoice|tax\s*invoice|qty|quantity|unit\s*price|hsn|gst|subtotal|amount|bill\s*to|cgst|sgst|igst|gstin|sold\s*by|payment\s*transaction|pan\s*(?:no|number|#)?)\b/i;
 
 const INVOICE_ONLY_PATTERN =
-  /\b(tax\s*invoice|invoice\s*number|invoice\s*date|amount\s*in\s*words|authorized\s*signatory|place\s*of\s*supply|taxable\s*value|total\s*invoice\s*value|payment\s*transaction\s*id|pan\s*(?:no|number|#)?|gst\s*(?:registration|in|no\.?)|gstin|sold\s*by|irn\b|e-?invoice)\b/i;
+  /\b(tax\s*invoice|invoice\s*number|invoice\s*date|amount\s*in\s*words|authorized\s*signatory|place\s*of\s*supply|taxable\s*value|total\s*invoice\s*value|payment\s*transaction(?:\s*id)?|pan\s*(?:no|number|#)?|gst\s*(?:registration|in|no\.?)|gstin|sold\s*by|irn\b|e-?invoice)\b/i;
 
 /** Seller-info / invoice fragments that appear when Amazon left-column has no label. */
 const AMAZON_INVOICE_FRAGMENT_PATTERN =
-  /\b(sold\s*by|pan\s*(?:no|number|#)?|gst\s*(?:registration|in|no\.?)|gstin|tax\s*invoice|payment\s*transaction\s*id|billing\s*address|invoice\s*number|irn\b|e-?invoice)\b/i;
+  /\b(sold\s*by|pan\s*(?:no|number|#)?|gst\s*(?:registration|in|no\.?)|gstin|tax\s*invoice|payment\s*transaction(?:\s*id)?|billing\s*address|invoice\s*number|irn\b|e-?invoice|amzn1\.api\.)\b/i;
 
 /**
  * Markers that prove a real shipping label. Deliberately excludes "Deliver To" —
@@ -56,12 +56,11 @@ function isInvoiceIdentityWithoutShipping(text: string) {
 }
 
 /**
- * Drop Sold By / tax-invoice crops that have no shipping barcode.
- * Never drop a barcode-backed crop — user wants every shipping label with a barcode kept.
- * (E-invoice QR false positives are handled by the linear-strip barcode heuristic + page gates.)
+ * Drop invoice / payment / Sold By crops unless they have real shipping markers.
+ * E-invoice QRs can fake a barcode score — invoice identity without Ship To / AWB is dropped
+ * even when a barcode is detected. Real shipping labels always have Ship To or AWB text.
  */
-function isUnwantedInvoiceRegion(text: string, hasBarcode: boolean) {
-  if (hasBarcode) return false;
+function isUnwantedInvoiceRegion(text: string, _hasBarcode: boolean) {
   if (STRONG_SHIPPING_MARKER_PATTERN.test(text)) return false;
   return isInvoiceIdentityWithoutShipping(text);
 }
@@ -742,31 +741,29 @@ export async function regionHasBarcode(
 }
 
 /**
- * Detect if a crop region is an Amazon seller/invoice fragment (logo + Sold By + PAN).
- * Barcode-backed crops are never treated as invoice fragments.
+ * Detect if a crop region is an Amazon seller/invoice/payment fragment.
+ * Real shipping labels have Ship To / AWB — invoice identity without those is always dropped,
+ * even when an e-invoice QR fakes a barcode score.
  */
 export async function regionLooksLikeInvoiceFragment(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  pdfPage: any,
+  _pdfPage: any,
   box: Box,
-  pageWidth: number,
+  _pageWidth: number,
   pageHeight: number,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   textContent: any,
 ) {
   const regionText = textItemsInRegion(textContent, box, pageHeight);
   if (STRONG_SHIPPING_MARKER_PATTERN.test(regionText)) return false;
-
-  const hasBarcode = await regionHasBarcode(pdfPage, box, pageWidth, pageHeight);
-  if (hasBarcode) return false;
-
   return isInvoiceIdentityWithoutShipping(regionText);
 }
 
 /**
- * Skip only pages with no shipping barcode in the label column.
- * Do NOT use full-page invoice text — Amazon 2-up pages have invoices on the right
- * beside real left-column barcodes, and those labels must still be cropped.
+ * Skip only pages with no shipping label in the label column.
+ * Uses label-column text (not full page) so right-column invoices on 2-up pages
+ * do not hide left-column barcodes — but payment / invoice pages in the label
+ * column are skipped even when an e-invoice QR fakes a barcode score.
  */
 export async function isPageSkippable(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -776,6 +773,16 @@ export async function isPageSkippable(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   textContent: any,
 ) {
+  const labelColumnWidth = pageWidth * 0.52;
+  const labelColumnBox: Box = { left: 0, bottom: 0, right: labelColumnWidth, top: pageHeight };
+  const labelColumnText = textItemsInRegion(textContent, labelColumnBox, pageHeight);
+
+  // Real shipping labels in the label column always have Ship To / AWB text.
+  if (STRONG_SHIPPING_MARKER_PATTERN.test(labelColumnText)) return false;
+
+  // Payment / Sold By / tax-invoice content in the label column — skip even with QR "barcode".
+  if (isInvoiceIdentityWithoutShipping(labelColumnText)) return true;
+
   const pageText = fullPageText(textContent, pageWidth, pageHeight);
   const hasStrongShipping = STRONG_SHIPPING_MARKER_PATTERN.test(pageText);
   const hasInvoiceMarkers = INVOICE_ONLY_PATTERN.test(pageText) || AMAZON_INVOICE_FRAGMENT_PATTERN.test(pageText);
@@ -783,18 +790,10 @@ export async function isPageSkippable(
   const { ctx, viewport } = await renderPage(pdfPage, 1.5);
   const imageData = ctx.getImageData(0, 0, viewport.width, viewport.height);
 
-  // Prefer the left label column for Amazon-style layouts (~50% width).
-  // Right-column invoices / e-invoice QRs must not decide whether labels are kept.
-  const labelColumnWidth = pageWidth * 0.52;
-  const labelColumnRect = pdfBoxToCanvasRect(
-    { left: 0, bottom: 0, right: labelColumnWidth, top: pageHeight },
-    pageWidth,
-    pageHeight,
-    viewport,
-  );
+  const labelColumnRect = pdfBoxToCanvasRect(labelColumnBox, pageWidth, pageHeight, viewport);
   const labelColumnScore = scoreRegionPixels(imageData, viewport.width, labelColumnRect);
 
-  // Any barcode strip in the label column ⇒ keep page and crop those labels.
+  // Barcode in label column with no invoice identity in that column ⇒ real label page.
   if (labelColumnScore.barcodeScore >= 0.2) return false;
   if (hasStrongShipping) return false;
 
@@ -803,10 +802,8 @@ export async function isPageSkippable(
 
   if (density < BLANK_PAGE_DENSITY) return true;
 
-  // Invoice / seller-info pages with no label-column barcode.
   if (hasInvoiceMarkers) return true;
 
-  // No barcode, no shipping markers — unwanted / blank-ish page.
   return true;
 }
 
