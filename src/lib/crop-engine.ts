@@ -395,6 +395,32 @@ function getAmazonOutputSize(labelWidth: number, labelHeight: number) {
   };
 }
 
+/**
+ * Fit a tight Flipkart/Meesho label crop onto 4×6 without clipping.
+ * Uses contain (not cover) with a small margin on all sides so top/bottom
+ * barcode bands stay visible while the label stays large.
+ */
+function fitLabelOnThermalPage(
+  labelWidth: number,
+  labelHeight: number,
+  pageWidth: number,
+  pageHeight: number,
+  marginPt = 8,
+) {
+  const innerW = Math.max(1, pageWidth - marginPt * 2);
+  const innerH = Math.max(1, pageHeight - marginPt * 2);
+  const scale = Math.min(innerW / labelWidth, innerH / labelHeight);
+  const drawWidth = labelWidth * scale;
+  const drawHeight = labelHeight * scale;
+  return {
+    scale,
+    drawWidth,
+    drawHeight,
+    x: (pageWidth - drawWidth) / 2,
+    y: (pageHeight - drawHeight) / 2,
+  };
+}
+
 async function looksBlank(
   sourcePdf: PDFDocument,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -582,8 +608,8 @@ export async function createCroppedPdf(
         continue;
       }
 
-      // Flipkart / Meesho: crop is already a tight label band — enlarge onto 4×6
-      // (never keep a wide A4 strip that forces the label to shrink).
+      // Flipkart / Meesho: crop is a tight label band — fit onto 4×6 with margins
+      // (contain, not cover) so top/bottom sections are not clipped.
       const isTopMarketplace =
         effectiveSettings.platformId === "flipkart" || effectiveSettings.platformId === "meesho";
       const target = isTopMarketplace
@@ -593,21 +619,29 @@ export async function createCroppedPdf(
 
       page.drawRectangle({ x: 0, y: 0, width: target.width, height: target.height, color: rgb(1, 1, 1) });
 
-      // Prefer cover for Flipkart so the tight label fills the thermal page.
-      const fitMode = isTopMarketplace ? "cover" : effectiveSettings.fitMode;
-      const scale =
-        fitMode === "cover"
-          ? Math.max(target.width / label.width, target.height / label.height)
-          : Math.min(target.width / label.width, target.height / label.height);
-      const drawWidth = label.width * scale;
-      const drawHeight = label.height * scale;
+      if (isTopMarketplace) {
+        const fitted = fitLabelOnThermalPage(label.width, label.height, target.width, target.height, 10);
+        page.drawPage(label, {
+          x: fitted.x,
+          y: fitted.y,
+          width: fitted.drawWidth,
+          height: fitted.drawHeight,
+        });
+      } else {
+        const scale =
+          effectiveSettings.fitMode === "cover"
+            ? Math.max(target.width / label.width, target.height / label.height)
+            : Math.min(target.width / label.width, target.height / label.height);
+        const drawWidth = label.width * scale;
+        const drawHeight = label.height * scale;
 
-      page.drawPage(label, {
-        x: (target.width - drawWidth) / 2,
-        y: (target.height - drawHeight) / 2,
-        width: drawWidth,
-        height: drawHeight,
-      });
+        page.drawPage(label, {
+          x: (target.width - drawWidth) / 2,
+          y: (target.height - drawHeight) / 2,
+          width: drawWidth,
+          height: drawHeight,
+        });
+      }
 
       labelsAdded += 1;
     }
