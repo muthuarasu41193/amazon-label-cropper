@@ -49,10 +49,10 @@ export function UploadZone() {
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`group flex min-h-[220px] cursor-pointer flex-col items-center justify-center rounded-[var(--radius-card)] border-2 border-dashed px-6 py-12 transition-all duration-200 sm:min-h-[260px] ${
+        className={`group flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-[var(--radius-card)] border-2 border-dashed px-6 py-10 transition-all duration-200 sm:min-h-[240px] ${
           isDragging
-            ? "drag-active border-primary bg-primary/10 shadow-[var(--shadow-soft-lg)] ring-2 ring-primary/30"
-            : "border-border bg-surface hover:border-primary/40 hover:shadow-[var(--shadow-soft-md)]"
+            ? "drag-active border-primary bg-primary/8 shadow-[var(--shadow-glow)] ring-2 ring-primary/20"
+            : "border-border bg-card/60 hover:border-primary/30 hover:shadow-[var(--shadow-soft-md)]"
         } ${isLoading ? "pointer-events-none opacity-80" : ""}`}
       >
         <input
@@ -62,14 +62,17 @@ export function UploadZone() {
           className="sr-only"
           disabled={isLoading}
           onChange={(e) => handleFile(e.target.files?.[0])}
+          aria-label="Upload shipping label PDF"
         />
 
         <div
-          className={`mb-5 flex h-14 w-14 items-center justify-center rounded-[var(--radius-card)] transition-all duration-200 ${
-            isDragging ? "scale-110 bg-primary text-white" : "bg-card text-primary shadow-[var(--shadow-soft)]"
+          className={`mb-5 flex h-12 w-12 items-center justify-center rounded-[11px] transition-all duration-200 ${
+            isDragging
+              ? "scale-110 bg-primary text-white shadow-[var(--shadow-glow)]"
+              : "border border-border bg-surface text-primary"
           }`}
         >
-          <Upload className={`h-6 w-6 ${isDragging ? "animate-bounce" : ""}`} strokeWidth={1.75} />
+          <Upload className={`h-5 w-5 ${isDragging ? "animate-bounce" : ""}`} strokeWidth={1.75} />
         </div>
 
         {isLoading ? (
@@ -79,13 +82,13 @@ export function UploadZone() {
           </div>
         ) : (
           <>
-            <p className="text-center text-lg font-semibold tracking-tight text-text">
+            <p className="text-center text-base font-semibold tracking-tight text-text sm:text-lg">
               {isDragging ? "Drop to upload" : "Drop your shipping label PDF here"}
             </p>
             <p className="mt-2 max-w-md text-center text-sm text-muted">
               or click to browse — processing happens entirely in your browser
             </p>
-            <span className="btn-press mt-6 inline-flex items-center gap-2 rounded-[12px] border border-border bg-card px-4 py-2 text-sm font-medium text-text shadow-[var(--shadow-soft)] transition-transform">
+            <span className="btn-press mt-5 inline-flex items-center gap-2 rounded-[11px] border border-border bg-surface px-4 py-2 text-sm font-medium text-text transition-all hover:border-border-strong">
               <FileText className="h-4 w-4 text-muted" />
               Choose PDF file
             </span>

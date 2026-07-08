@@ -1,59 +1,56 @@
 import Link from "next/link";
+import { Logo } from "@/components/ui/Logo";
+import { SITE } from "@/lib/site";
 
 export function Footer() {
   return (
     <footer className="border-t border-border bg-surface/40">
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-10 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <Link href="/" className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-primary text-sm font-semibold text-white">
-                LF
-              </span>
-              <span className="text-[15px] font-semibold text-text">LabelForge</span>
-            </Link>
-            <p className="mt-3 max-w-xs text-sm text-muted">
-              Premium shipping label tools for marketplace sellers and logistics teams. Private by design.
+            <Logo href="/" size="md" />
+            <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted">
+              Enterprise shipping label tools for marketplace sellers and logistics teams. Private by design.
             </p>
           </div>
 
-          <nav className="flex flex-wrap gap-x-10 gap-y-4">
+          <nav className="flex flex-wrap gap-x-12 gap-y-6" aria-label="Footer navigation">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Legal</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Legal</p>
               <ul className="mt-3 space-y-2">
                 <li>
-                  <Link href="/privacy" className="text-sm text-text hover:text-primary">
+                  <Link href="/privacy" className="text-sm text-text transition-colors hover:text-primary">
                     Privacy Policy
                   </Link>
                 </li>
                 <li>
-                  <Link href="/terms" className="text-sm text-text hover:text-primary">
+                  <Link href="/terms" className="text-sm text-text transition-colors hover:text-primary">
                     Terms of Service
                   </Link>
                 </li>
                 <li>
-                  <Link href="/contact" className="text-sm text-text hover:text-primary">
+                  <Link href="/contact" className="text-sm text-text transition-colors hover:text-primary">
                     Contact
                   </Link>
                 </li>
               </ul>
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Product</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Product</p>
               <ul className="mt-3 space-y-2">
                 <li>
-                  <a href="#features" className="text-sm text-text hover:text-primary">
+                  <a href="#features" className="text-sm text-text transition-colors hover:text-primary">
                     Features
                   </a>
                 </li>
                 <li>
-                  <a href="#pricing" className="text-sm text-text hover:text-primary">
+                  <a href="#pricing" className="text-sm text-text transition-colors hover:text-primary">
                     Pricing
                   </a>
                 </li>
                 <li>
-                  <Link href="/crop" className="text-sm text-text hover:text-primary">
-                    Label cropper
+                  <Link href="/crop" className="text-sm text-text transition-colors hover:text-primary">
+                    Dashboard
                   </Link>
                 </li>
               </ul>
@@ -61,8 +58,11 @@ export function Footer() {
           </nav>
         </div>
 
-        <div className="mt-10 border-t border-border pt-6">
-          <p className="text-sm text-muted">© {new Date().getFullYear()} LabelForge. All rights reserved.</p>
+        <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-border pt-6 sm:flex-row">
+          <p className="text-sm text-muted">
+            © {new Date().getFullYear()} {SITE.name}. All rights reserved.
+          </p>
+          <p className="text-xs text-muted">Built for sellers worldwide · 12 platforms · 50+ countries</p>
         </div>
       </div>
     </footer>

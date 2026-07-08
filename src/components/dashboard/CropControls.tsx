@@ -31,7 +31,7 @@ export function CropControls({
   const update = (partial: Partial<CropSettings>) => onChange({ ...settings, ...partial });
 
   return (
-    <section className="rounded-[var(--radius-card)] border border-border bg-card p-5 shadow-[var(--shadow-soft)]">
+    <section className="panel-card p-5">
       <div className="mb-4 flex items-center gap-2">
         <SlidersHorizontal className="h-4 w-4 text-primary" />
         <div>

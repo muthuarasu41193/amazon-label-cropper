@@ -1,5 +1,6 @@
 import { Check } from "lucide-react";
-import Link from "next/link";
+import { LinkButton } from "@/components/ui/Button";
+import { SectionHeader } from "@/components/ui/SectionHeader";
 
 const plans = [
   {
@@ -9,7 +10,7 @@ const plans = [
     description: "Perfect for solo sellers getting started with thermal printing.",
     features: [
       "Up to 50 labels per day",
-      "All marketplace presets",
+      "All 12 platform presets",
       "4×6 thermal export",
       "Browser-side processing",
     ],
@@ -25,8 +26,8 @@ const plans = [
     features: [
       "Unlimited label crops",
       "Invoice text extraction",
-      "Priority preset updates",
       "Batch PDF processing",
+      "Priority preset updates",
       "Email support",
     ],
     cta: "Get Pro",
@@ -55,23 +56,20 @@ export function Pricing() {
   return (
     <section id="pricing" className="scroll-mt-20 border-t border-border bg-surface/40 py-20 sm:py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-semibold tracking-tight text-text sm:text-4xl">
-            Simple, transparent pricing
-          </h2>
-          <p className="mt-4 text-base text-muted">
-            Start free with no credit card. Upgrade when your shipping volume grows.
-          </p>
-        </div>
+        <SectionHeader
+          eyebrow="Pricing"
+          title="Simple, transparent pricing"
+          description="Start free with no credit card. Upgrade when your shipping volume grows."
+        />
 
-        <div className="mt-14 grid gap-6 lg:grid-cols-3">
+        <div className="mt-14 grid gap-4 lg:grid-cols-3">
           {plans.map((plan) => (
             <article
               key={plan.name}
               className={`relative flex flex-col rounded-[var(--radius-card)] border p-6 sm:p-8 ${
                 plan.highlighted
-                  ? "border-primary bg-card shadow-[var(--shadow-soft-lg)] ring-1 ring-primary/10"
-                  : "border-border bg-card shadow-[var(--shadow-soft)]"
+                  ? "border-primary/30 bg-card shadow-[var(--shadow-glow)] ring-1 ring-primary/10"
+                  : "border-border bg-card"
               }`}
             >
               {plan.highlighted && (
@@ -81,9 +79,9 @@ export function Pricing() {
               )}
 
               <div>
-                <h3 className="text-lg font-semibold text-text">{plan.name}</h3>
+                <h3 className="text-base font-semibold text-text">{plan.name}</h3>
                 <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-4xl font-semibold tracking-tight text-text">{plan.price}</span>
+                  <span className="text-4xl font-semibold tracking-[-0.02em] text-text">{plan.price}</span>
                   <span className="text-sm text-muted">{plan.period}</span>
                 </div>
                 <p className="mt-3 text-sm text-muted">{plan.description}</p>
@@ -98,16 +96,14 @@ export function Pricing() {
                 ))}
               </ul>
 
-              <Link
+              <LinkButton
                 href={plan.href}
-                className={`mt-8 inline-flex items-center justify-center rounded-[12px] px-4 py-2.5 text-sm font-medium transition-colors ${
-                  plan.highlighted
-                    ? "bg-primary text-white shadow-[var(--shadow-soft)] hover:bg-primary-hover"
-                    : "border border-border bg-card text-text hover:bg-surface"
-                }`}
+                variant={plan.highlighted ? "primary" : "outline"}
+                size="md"
+                className="mt-8 w-full"
               >
                 {plan.cta}
-              </Link>
+              </LinkButton>
             </article>
           ))}
         </div>

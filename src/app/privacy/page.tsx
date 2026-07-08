@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
+import { SITE } from "@/lib/site";
 
 export const metadata = {
-  title: "Privacy Policy — LabelForge",
+  title: "Privacy Policy",
+  description: `Privacy policy for ${SITE.name} — browser-side label processing with zero server uploads.`,
 };
 
 export default function PrivacyPage() {
@@ -11,12 +13,12 @@ export default function PrivacyPage() {
     <>
       <Navigation />
       <main className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-        <h1 className="text-3xl font-semibold text-text">Privacy Policy</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-text">Privacy Policy</h1>
         <p className="mt-4 text-muted">Last updated: July 2026</p>
 
-        <div className="prose prose-gray mt-8 space-y-6 text-sm leading-relaxed text-muted">
+        <div className="mt-8 space-y-6 text-sm leading-relaxed text-muted">
           <p>
-            LabelForge is designed with privacy as a core principle. All PDF processing happens locally in your web
+            {SITE.name} is designed with privacy as a core principle. All PDF processing happens locally in your web
             browser. We do not upload, store, or transmit your shipping label files to any server.
           </p>
           <h2 className="text-lg font-semibold text-text">Information we collect</h2>

@@ -296,12 +296,12 @@ function CropPageContent() {
       <Sidebar activePlatformId={platformId} mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4 lg:px-6">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card/80 px-4 backdrop-blur-xl lg:px-6">
           <div className="flex items-center gap-3">
             <MobileMenuButton onClick={() => setMobileOpen(true)} />
             <PlatformLogo id={platform.id} className="h-8 w-8" />
             <div>
-              <h1 className="text-sm font-semibold text-text">{platform.name} Label Cropper</h1>
+              <h1 className="text-sm font-semibold text-text">{platform.name} · LabelCrop</h1>
               <p className="hidden text-xs text-muted sm:block">{platform.layoutNote}</p>
             </div>
           </div>

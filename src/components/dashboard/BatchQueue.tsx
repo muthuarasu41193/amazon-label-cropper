@@ -44,7 +44,7 @@ export function BatchQueue({ items, activeId, onSelect, onRemove, onProcessAll, 
   const doneCount = items.filter((i) => i.status === "done").length;
 
   return (
-    <section className="rounded-[var(--radius-card)] border border-border bg-card p-5 shadow-[var(--shadow-soft)]">
+    <section className="panel-card p-5">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-text">Batch Queue</h2>

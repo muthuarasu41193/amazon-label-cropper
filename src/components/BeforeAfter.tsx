@@ -1,4 +1,6 @@
 import { ArrowRight } from "lucide-react";
+import { SectionHeader } from "@/components/ui/SectionHeader";
+import { SITE } from "@/lib/site";
 
 function LabelSheetMock({ variant }: { variant: "before" | "after" }) {
   if (variant === "before") {
@@ -50,7 +52,7 @@ function LabelSheetMock({ variant }: { variant: "before" | "after" }) {
       {[1, 2].map((n) => (
         <div
           key={n}
-          className="aspect-[2/3] w-full max-w-[140px] mx-auto rounded-lg border-2 border-primary/20 bg-card p-2.5 shadow-[var(--shadow-soft-md)]"
+          className="mx-auto aspect-[2/3] w-full max-w-[140px] rounded-lg border-2 border-primary/20 bg-card p-2.5 shadow-[var(--shadow-soft-md)]"
         >
           <div className="h-1.5 w-2/3 rounded bg-primary/30" />
           <div className="mt-2 h-10 rounded bg-text/10" />
@@ -71,45 +73,35 @@ export function BeforeAfter() {
   return (
     <section className="border-y border-border bg-surface/30 py-20 sm:py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-semibold tracking-tight text-text sm:text-4xl">
-            From messy PDFs to print-ready labels
-          </h2>
-          <p className="mt-4 text-base text-muted">
-            See how LabelForge transforms multi-label marketplace exports into individual thermal pages — no manual
-            cropping in Acrobat.
-          </p>
-        </div>
+        <SectionHeader
+          eyebrow="How it works"
+          title="From messy PDFs to print-ready labels"
+          description={`See how ${SITE.name} transforms multi-label marketplace exports into individual thermal pages — no manual cropping in Acrobat.`}
+        />
 
         <div className="mt-14 flex flex-col items-center gap-8 lg:flex-row lg:justify-center lg:gap-12">
           <div className="w-full max-w-[220px]">
-            <p className="mb-3 text-center text-xs font-semibold uppercase tracking-wider text-muted">Before</p>
+            <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.12em] text-muted">Before</p>
             <LabelSheetMock variant="before" />
           </div>
 
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
             <ArrowRight className="h-5 w-5" strokeWidth={2} />
           </div>
 
           <div className="w-full max-w-[180px]">
-            <p className="mb-3 text-center text-xs font-semibold uppercase tracking-wider text-primary">After</p>
+            <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.12em] text-primary">After</p>
             <LabelSheetMock variant="after" />
           </div>
         </div>
 
         <ul className="mx-auto mt-12 flex max-w-xl flex-wrap justify-center gap-x-8 gap-y-2 text-sm text-muted">
-          <li className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-            Invoice columns removed
-          </li>
-          <li className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-            Barcodes preserved
-          </li>
-          <li className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-            4×6 thermal sizing
-          </li>
+          {["Invoice columns removed", "Barcodes preserved", "4×6 thermal sizing"].map((item) => (
+            <li key={item} className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              {item}
+            </li>
+          ))}
         </ul>
       </div>
     </section>
