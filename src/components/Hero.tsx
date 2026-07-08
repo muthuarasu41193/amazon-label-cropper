@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import { UploadZone } from "@/components/UploadZone";
 import { PLATFORM_DISPLAY_NAMES, FEATURED_PLATFORMS } from "@/lib/platforms";
 
@@ -26,6 +27,14 @@ export function Hero() {
 
         <div className="mx-auto mt-10 max-w-2xl lg:mt-12">
           <UploadZone />
+          <ul className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted">
+            {["Secure processing", "Auto-deleted after use", "No watermark"].map((item) => (
+              <li key={item} className="flex items-center gap-1.5">
+                <Check className="h-3.5 w-3.5 text-emerald-600" strokeWidth={2.5} />
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </section>
