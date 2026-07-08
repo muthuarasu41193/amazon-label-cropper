@@ -2,11 +2,28 @@
 
 The live site must serve the **Next.js app** — not the legacy `index.html` / `cropper.html` at the repo root.
 
-## Vercel (primary)
+## Vercel (primary — always live on push)
 
-**URL:** https://amazon-label-cropper.vercel.app
+**Production URL:** https://amazon-label-cropper.vercel.app  
+**Custom domain (intended):** https://labelcrop.com
 
-Connected to the GitHub repo — each push to `master` triggers a production deploy.
+Each push to `master` triggers a Vercel production deploy. GitHub Actions workflow `.github/workflows/verify-production.yml` waits for that deploy and smoke-tests the live URL so stale or failed releases are caught automatically.
+
+### Custom domain: labelcrop.com
+
+`labelcrop.com` must point at Vercel for the public domain to receive updates. If the site shows a parking/lander page instead of LabelCrop, DNS is not configured yet.
+
+**One-time setup:**
+
+1. Vercel → your project → **Settings** → **Domains** → add `labelcrop.com` and `www.labelcrop.com`
+2. At your domain registrar (where you bought labelcrop.com), replace parking DNS with:
+   - `www` → **CNAME** → `cname.vercel-dns.com`
+   - `@` (root) → **A** → `76.76.21.21` (or use your registrar’s apex → Vercel instructions)
+3. Wait for DNS propagation (often 5–30 minutes), then confirm in Vercel that both domains show **Valid**
+
+Repo `vercel.json` already lists `labelcrop.com` / `www.labelcrop.com` as aliases so they attach on deploy once DNS is correct.
+
+Until DNS is fixed, use **https://amazon-label-cropper.vercel.app** — that URL always reflects the latest `master` build.
 
 ### Required settings (enforced in repo)
 

@@ -21,6 +21,11 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   images: { unoptimized: true },
   outputFileTracingRoot: path.join(__dirname),
+  env: {
+    // Exposed for production smoke tests (meta tag in root layout).
+    NEXT_PUBLIC_BUILD_SHA:
+      process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? "local",
+  },
 };
 
 export default nextConfig;

@@ -1,0 +1,48 @@
+name: Verify production deploy
+
+on:
+  push:
+    branches: ["master"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  wait-and-verify:
+    name: Wait for Vercel, then smoke-test live site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wait for GitHub Production deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ github.sha }}"
+          echo "Waiting for Production deployment of ${SHA:0:7}..."
+          for attempt in $(seq 1 36); do
+            DEPLOYED=$(gh api "repos/${{ github.repository }}/deployments" \
+              --jq ".[] | select(.environment==\"Production\" and .sha==\"$SHA\") | .sha" | head -1)
+            if [ -n "$DEPLOYED" ]; then
+              echo "Production deployment registered for $SHA"
+              exit 0
+            fi
+            echo "Attempt $attempt/36 — not ready yet, sleeping 10s..."
+            sleep 10
+          done
+          echo "::error::No Production deployment for $SHA within 6 minutes"
+          exit 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Smoke-test live Vercel URL
+        run: node scripts/verify-production-live.mjs
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          PRODUCTION_URL: https://amazon-label-cropper.vercel.app
