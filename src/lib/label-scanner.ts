@@ -16,13 +16,20 @@ import {
 import { detectPlatformFromText, shouldAutoDetectPlatform } from "./platform-detect";
 
 const LABEL_TEXT_PATTERN =
-  /\b(ship\s*to|ship\s*from|deliver\s*to|shipment|tracking|awb|fba|amazon\s+logistics|courier|consignee|pickup|shipment\s*id|carrier|destination|return\s*to|fulfillment|waybill|barcode|dispatch|consignment|ekart|shadowfax|delhivery|valmo|meesho|flipkart|atspl|amzl)\b/i;
+  /\b(ship\s*to|ship\s*from|deliver\s*to|shipping\/?customer\s*address|tracking|awb\b|awb\s*no|fba|amazon\s+logistics|courier|consignee|pickup|shipment\s*id|carrier|destination|return\s*to|fulfillment|waybill|dispatch|consignment|ekart|shadowfax|delhivery|valmo|meesho|flipkart|atspl|amzl)\b/i;
 
 const INVOICE_TEXT_PATTERN =
-  /\b(description|invoice|tax\s*invoice|qty|quantity|unit\s*price|hsn|gst|subtotal|amount|bill\s*to|cgst|sgst|igst|gstin|sold\s*by|payment\s*transaction)\b/i;
+  /\b(description|invoice|tax\s*invoice|qty|quantity|unit\s*price|hsn|gst|subtotal|amount|bill\s*to|cgst|sgst|igst|gstin|sold\s*by|payment\s*transaction|pan\s*no)\b/i;
 
 const INVOICE_ONLY_PATTERN =
-  /\b(tax\s*invoice|invoice\s*number|invoice\s*date|amount\s*in\s*words|authorized\s*signatory|place\s*of\s*supply|taxable\s*value|total\s*invoice\s*value|payment\s*transaction\s*id|pan\s*no|gst\s*registration)\b/i;
+  /\b(tax\s*invoice|invoice\s*number|invoice\s*date|amount\s*in\s*words|authorized\s*signatory|place\s*of\s*supply|taxable\s*value|total\s*invoice\s*value|payment\s*transaction\s*id|pan\s*no|gst\s*registration|sold\s*by)\b/i;
+
+/** Seller-info / invoice fragments that appear when Amazon left-column has no label. */
+const AMAZON_INVOICE_FRAGMENT_PATTERN =
+  /\b(sold\s*by|pan\s*no|gst\s*registration|tax\s*invoice|payment\s*transaction\s*id|billing\s*address|invoice\s*number)\b/i;
+
+const SHIPPING_LABEL_MARKER_PATTERN =
+  /\b(ship\s*to|ship\s*from|deliver\s*to|shipping\/?customer\s*address|awb\b|awb\s*no|tracking|consignee|amazon\s+logistics|amzl|atspl)\b/i;
 
 const CONTENT_DENSITY = 0.018;
 const BLANK_PAGE_DENSITY = 0.012;
@@ -131,11 +138,14 @@ function scoreRegionPixels(imageData: ImageData, canvasWidth: number, rect: { x:
     }
 
     totalPixels += endX - startX;
-    if (rowTransitions > 10 && rowDark > (endX - startX) * 0.15) barcodeRows++;
+    // Real AWB barcodes have many dark/light transitions across most of the row.
+    // Logos / text rarely hit this density, which avoids false positives.
+    if (rowTransitions > 16 && rowDark > (endX - startX) * 0.18) barcodeRows++;
   }
 
   const density = totalPixels > 0 ? darkPixels / totalPixels : 0;
-  const barcodeScore = barcodeRows >= 4 ? 0.3 : barcodeRows >= 2 ? 0.15 : 0;
+  // Require a sustained barcode strip (not 2 noisy logo rows).
+  const barcodeScore = barcodeRows >= 8 ? 0.35 : barcodeRows >= 5 ? 0.2 : 0;
 
   return { density, barcodeScore };
 }
@@ -256,7 +266,7 @@ function scoreLabelRegion(
   const invoicePenalty = hasInvoiceText && !hasLabelText ? -0.35 : 0;
 
   const score = density * 0.45 + barcodeScore + textScore + invoicePenalty;
-  return { score, density, hasLabelText, hasInvoiceText, hasBarcode: barcodeScore > 0 };
+  return { score, density, hasLabelText, hasInvoiceText, hasBarcode: barcodeScore >= 0.2 };
 }
 
 /** Returns true when the page is invoice-only (no shipping label / barcode content). */
@@ -676,7 +686,30 @@ export async function regionHasBarcode(
   const rect = pdfBoxToCanvasRect(box, pageWidth, pageHeight, viewport);
   const imageData = ctx.getImageData(0, 0, viewport.width, viewport.height);
   const { barcodeScore } = scoreRegionPixels(imageData, viewport.width, rect);
-  return barcodeScore > 0;
+  return barcodeScore >= 0.2;
+}
+
+/**
+ * Detect if a crop region is an Amazon seller/invoice fragment (logo + Sold By + PAN)
+ * without a real shipping barcode — these must never appear in output.
+ */
+export async function regionLooksLikeInvoiceFragment(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pdfPage: any,
+  box: Box,
+  pageWidth: number,
+  pageHeight: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  textContent: any,
+) {
+  const regionText = textItemsInRegion(textContent, box, pageHeight);
+  const hasInvoiceFragment = AMAZON_INVOICE_FRAGMENT_PATTERN.test(regionText);
+  const hasShippingMarkers = SHIPPING_LABEL_MARKER_PATTERN.test(regionText);
+  if (!hasInvoiceFragment) return false;
+  if (hasShippingMarkers) return false;
+
+  const hasBarcode = await regionHasBarcode(pdfPage, box, pageWidth, pageHeight);
+  return !hasBarcode;
 }
 
 /** Detect if an entire page is invoice-only, barcode-less, or blank — skip entirely. */
@@ -689,8 +722,17 @@ export async function isPageSkippable(
   textContent: any,
 ) {
   const pageText = fullPageText(textContent, pageWidth, pageHeight);
-  const hasInvoiceMarkers = INVOICE_ONLY_PATTERN.test(pageText);
-  const hasLabelMarkers = LABEL_TEXT_PATTERN.test(pageText);
+  const hasInvoiceMarkers = INVOICE_ONLY_PATTERN.test(pageText) || AMAZON_INVOICE_FRAGMENT_PATTERN.test(pageText);
+  const hasLabelMarkers = SHIPPING_LABEL_MARKER_PATTERN.test(pageText) || LABEL_TEXT_PATTERN.test(pageText);
+
+  // Pure invoice / seller-info pages (no ship-to / AWB language).
+  if (hasInvoiceMarkers && !SHIPPING_LABEL_MARKER_PATTERN.test(pageText)) {
+    const { ctx, viewport } = await renderPage(pdfPage, 1.5);
+    const imageData = ctx.getImageData(0, 0, viewport.width, viewport.height);
+    const fullRect = { x: 0, y: 0, w: viewport.width, h: viewport.height };
+    const { barcodeScore } = scoreRegionPixels(imageData, viewport.width, fullRect);
+    if (barcodeScore < 0.2) return true;
+  }
 
   if (hasInvoiceMarkers && !hasLabelMarkers) return true;
 
@@ -702,7 +744,7 @@ export async function isPageSkippable(
   if (density < BLANK_PAGE_DENSITY) return true;
 
   // Invoice / payment / seller-info fragments with no shipping barcode.
-  if (barcodeScore === 0 && (hasInvoiceMarkers || !hasLabelMarkers)) {
+  if (barcodeScore < 0.2 && (hasInvoiceMarkers || !SHIPPING_LABEL_MARKER_PATTERN.test(pageText))) {
     return true;
   }
 

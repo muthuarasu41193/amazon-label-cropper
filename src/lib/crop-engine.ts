@@ -7,6 +7,7 @@ import {
   isPageSkippable,
   regionHasBarcode,
   regionHasContent,
+  regionLooksLikeInvoiceFragment,
   scanPageForLabels,
   shouldAutoDetectPlatform,
 } from "./label-scanner";
@@ -431,23 +432,32 @@ async function looksBlank(
   pageWidth: number,
   pageHeight: number,
 ) {
-  if (!settings.skipBlank) return false;
+  // Marketplace barcode / invoice checks always run when pdf.js is available,
+  // even if "skip blank" is off — otherwise Sold By / logo panels leak through.
+  const platformId = settings.platformId ?? "";
+  const marketplace = isMarketplaceWithBarcodes(platformId);
 
   if (pdfJsDoc) {
     const pdfPage = await pdfJsDoc.getPage(pageIndex + 1);
-    const hasContent = await regionHasContent(pdfPage, box, pageWidth, pageHeight);
-    if (!hasContent) return true;
 
-    // Amazon / Flipkart / Meesho shipping labels always carry a barcode.
-    // Drop logo/invoice fragments that somehow still got a crop box.
-    const platformId = settings.platformId ?? "";
-    if (platformId === "amazon" || platformId === "flipkart" || platformId === "meesho") {
+    if (marketplace) {
+      const textContent = await pdfPage.getTextContent();
+      if (await regionLooksLikeInvoiceFragment(pdfPage, box, pageWidth, pageHeight, textContent)) {
+        return true;
+      }
       const hasBarcode = await regionHasBarcode(pdfPage, box, pageWidth, pageHeight);
       if (!hasBarcode) return true;
     }
 
+    if (settings.skipBlank) {
+      const hasContent = await regionHasContent(pdfPage, box, pageWidth, pageHeight);
+      if (!hasContent) return true;
+    }
+
     return false;
   }
+
+  if (!settings.skipBlank) return false;
 
   const probePdf = await PDFDocument.create();
   const embedded = await probePdf.embedPage(sourcePdf.getPages()[pageIndex], box);
@@ -492,14 +502,14 @@ async function resolvePagePairs(
         continue;
       }
 
-      if (settings.smartScan) {
+      // Always prefer content scan for marketplaces — rigid fallback emits Sold By panels.
+      if (settings.smartScan || marketplace) {
         const detected = await scanPageForLabels(pdfPage, width, height, textContent, settings);
-        // For Amazon/Flipkart/Meesho: empty scan means no barcode labels — do not fall back
-        // to rigid boxes that would emit invoice/payment fragments.
         if (detected.length > 0) {
           allPairs.push(detected);
           continue;
         }
+        // No barcode-backed labels on this page — skip it for marketplaces.
         if (marketplace) {
           allPairs.push([]);
           continue;
@@ -507,8 +517,7 @@ async function resolvePagePairs(
       }
     }
 
-    // Manual / non-marketplace path may still use rigid geometry.
-    if (marketplace && settings.smartScan) {
+    if (marketplace) {
       allPairs.push([]);
       continue;
     }
