@@ -29,8 +29,8 @@ function PlatformNavItem({
       onClick={() => onSelect(platform.id)}
       className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-all ${
         isActive
-          ? "bg-white shadow-[var(--shadow-soft)] ring-1 ring-border"
-          : "text-muted hover:bg-white/60 hover:text-text"
+          ? "bg-card shadow-[var(--shadow-soft)] ring-1 ring-border"
+          : "text-muted hover:bg-card/60 hover:text-text"
       }`}
       style={isActive ? { borderLeft: `3px solid ${platform.accent}` } : { borderLeft: "3px solid transparent" }}
     >

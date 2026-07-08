@@ -44,7 +44,7 @@ export function Testimonials() {
           {testimonials.map((item) => (
             <article
               key={item.name}
-              className="flex flex-col rounded-[var(--radius-card)] border border-border bg-white p-6 shadow-[var(--shadow-soft)]"
+              className="flex flex-col rounded-[var(--radius-card)] border border-border bg-card p-6 shadow-[var(--shadow-soft)]"
             >
               <Quote className="h-8 w-8 text-primary/20" strokeWidth={1.5} />
               <blockquote className="mt-4 flex-1 text-sm leading-relaxed text-text">&ldquo;{item.quote}&rdquo;</blockquote>

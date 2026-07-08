@@ -1,6 +1,7 @@
 "use client";
 
 import { Scan, SlidersHorizontal } from "lucide-react";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import type { CropSettings } from "@/lib/crop-engine";
 import type { Platform } from "@/lib/platforms";
 
@@ -30,7 +31,7 @@ export function CropControls({
   const update = (partial: Partial<CropSettings>) => onChange({ ...settings, ...partial });
 
   return (
-    <section className="rounded-[var(--radius-card)] border border-border bg-white p-5 shadow-[var(--shadow-soft)]">
+    <section className="rounded-[var(--radius-card)] border border-border bg-card p-5 shadow-[var(--shadow-soft)]">
       <div className="mb-4 flex items-center gap-2">
         <SlidersHorizontal className="h-4 w-4 text-primary" />
         <div>
@@ -66,7 +67,7 @@ export function CropControls({
             value={settings.cropPreset}
             onChange={(e) => update({ cropPreset: e.target.value })}
             disabled={settings.smartScan}
-            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-text disabled:opacity-50"
+            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-text disabled:opacity-50"
           >
             <option value="left-half">Labels left, invoices right</option>
             <option value="right-half">Labels right, invoices left</option>
@@ -124,16 +125,7 @@ export function CropControls({
 
       {isProcessing && (
         <div className="mt-4">
-          <div className="mb-1.5 flex items-center justify-between text-xs">
-            <span className="text-muted">{progressLabel}</span>
-            <span className="font-medium text-text">{progress}%</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-surface">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
+          <ProgressBar value={progress} label={progressLabel} striped />
         </div>
       )}
 
@@ -141,7 +133,7 @@ export function CropControls({
         type="button"
         onClick={onProcess}
         disabled={!canProcess || isProcessing}
-        className="mt-5 w-full rounded-xl bg-primary py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-40"
+        className="btn-press mt-5 w-full rounded-xl bg-primary py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-40"
       >
         {isProcessing ? "Processing…" : "Crop labels"}
       </button>

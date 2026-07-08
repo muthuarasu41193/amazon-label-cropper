@@ -21,7 +21,7 @@ export function DownloadBar({ onDownload, onPrint, disabled, labelCount }: Downl
         type="button"
         onClick={onPrint}
         disabled={disabled}
-        className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-white px-3 py-2 text-sm font-medium text-text hover:bg-surface disabled:opacity-40"
+        className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-text hover:bg-surface disabled:opacity-40"
       >
         <Printer className="h-4 w-4" />
         <span className="hidden sm:inline">Print</span>
@@ -30,7 +30,7 @@ export function DownloadBar({ onDownload, onPrint, disabled, labelCount }: Downl
         type="button"
         onClick={onDownload}
         disabled={disabled}
-        className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-40"
+        className="btn-press inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-40"
       >
         <Download className="h-4 w-4" />
         Download PDF

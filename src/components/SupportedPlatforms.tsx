@@ -21,7 +21,7 @@ export function SupportedPlatforms() {
           {platforms.map((platform) => (
             <article
               key={platform.id}
-              className="group flex flex-col rounded-[var(--radius-card)] border border-border bg-white p-5 shadow-[var(--shadow-soft)] transition-shadow hover:shadow-[var(--shadow-soft-md)]"
+              className="group flex flex-col rounded-[var(--radius-card)] border border-border bg-card p-5 shadow-[var(--shadow-soft)] transition-shadow hover:shadow-[var(--shadow-soft-md)]"
               style={{ "--card-accent": platform.accent, "--card-accent-rgb": platform.accentRgb } as CSSProperties}
             >
               <div className="flex items-start gap-3">
@@ -55,7 +55,7 @@ export function SupportedPlatforms() {
 
               <Link
                 href={`/crop?p=${platform.id}`}
-                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border border-border bg-white px-4 py-2.5 text-sm font-medium text-text shadow-[var(--shadow-soft)] transition-all group-hover:border-[color:var(--card-accent)] group-hover:text-[color:var(--card-accent)]"
+                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[12px] border border-border bg-card px-4 py-2.5 text-sm font-medium text-text shadow-[var(--shadow-soft)] transition-all group-hover:border-[color:var(--card-accent)] group-hover:text-[color:var(--card-accent)]"
               >
                 Use {platform.name} preset
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />

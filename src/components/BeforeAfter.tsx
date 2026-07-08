@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 function LabelSheetMock({ variant }: { variant: "before" | "after" }) {
   if (variant === "before") {
     return (
-      <div className="aspect-[8.5/11] w-full rounded-lg border border-border bg-white p-3 shadow-[var(--shadow-soft-md)]">
+      <div className="aspect-[8.5/11] w-full rounded-lg border border-border bg-card p-3 shadow-[var(--shadow-soft-md)]">
         <div className="mb-2 h-2 w-16 rounded bg-muted/30" />
         <div className="grid h-[calc(100%-1rem)] grid-cols-2 gap-2">
           <div className="space-y-2 rounded border border-dashed border-border bg-surface/80 p-2">
@@ -50,7 +50,7 @@ function LabelSheetMock({ variant }: { variant: "before" | "after" }) {
       {[1, 2].map((n) => (
         <div
           key={n}
-          className="aspect-[2/3] w-full max-w-[140px] mx-auto rounded-lg border-2 border-primary/20 bg-white p-2.5 shadow-[var(--shadow-soft-md)]"
+          className="aspect-[2/3] w-full max-w-[140px] mx-auto rounded-lg border-2 border-primary/20 bg-card p-2.5 shadow-[var(--shadow-soft-md)]"
         >
           <div className="h-1.5 w-2/3 rounded bg-primary/30" />
           <div className="mt-2 h-10 rounded bg-text/10" />

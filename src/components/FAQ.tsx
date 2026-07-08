@@ -55,7 +55,7 @@ export function FAQ() {
             return (
               <div
                 key={faq.question}
-                className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-white shadow-[var(--shadow-soft)]"
+                className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-card shadow-[var(--shadow-soft)]"
               >
                 <button
                   type="button"

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const navLinks = [
   { href: "#platforms", label: "Platforms" },
@@ -9,7 +10,7 @@ const navLinks = [
 
 export function Navigation() {
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-white/80 backdrop-blur-md">
+    <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center gap-2.5">
           <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-primary text-sm font-semibold text-white shadow-[var(--shadow-soft)]">
@@ -31,6 +32,7 @@ export function Navigation() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           <Link
             href="/crop"
             className="hidden rounded-[12px] px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-text sm:inline-flex"

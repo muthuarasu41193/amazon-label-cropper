@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, CheckCircle2, Clock, Loader2, Trash2 } from "lucide-react";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 
 export type QueueItem = {
   id: string;
@@ -43,7 +44,7 @@ export function BatchQueue({ items, activeId, onSelect, onRemove, onProcessAll, 
   const doneCount = items.filter((i) => i.status === "done").length;
 
   return (
-    <section className="rounded-[var(--radius-card)] border border-border bg-white p-5 shadow-[var(--shadow-soft)]">
+    <section className="rounded-[var(--radius-card)] border border-border bg-card p-5 shadow-[var(--shadow-soft)]">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-text">Batch Queue</h2>
@@ -56,7 +57,7 @@ export function BatchQueue({ items, activeId, onSelect, onRemove, onProcessAll, 
             type="button"
             onClick={onProcessAll}
             disabled={isProcessing}
-            className="rounded-xl bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-border/50 disabled:opacity-40"
+            className="btn-press rounded-xl bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-border/50 disabled:opacity-40"
           >
             Process all
           </button>
@@ -78,24 +79,25 @@ export function BatchQueue({ items, activeId, onSelect, onRemove, onProcessAll, 
               className="min-w-0 flex-1 text-left"
             >
               <p className="truncate text-xs font-medium text-text">{item.file.name}</p>
-              <p className="text-[10px] text-muted">
-                {item.status === "processing"
-                  ? item.progressLabel
-                  : item.status === "done"
+              {item.status === "processing" ? (
+                <div className="mt-1.5">
+                  <ProgressBar value={item.progress} label={item.progressLabel} size="sm" showPercent={false} striped />
+                </div>
+              ) : (
+                <p className="text-[10px] text-muted">
+                  {item.status === "done"
                     ? `${item.labelsAdded} labels`
                     : item.status === "error"
                       ? item.error
                       : "Pending"}
-              </p>
+                </p>
+              )}
             </button>
-            {item.status === "processing" && (
-              <span className="text-[10px] font-medium text-primary">{item.progress}%</span>
-            )}
             <button
               type="button"
               onClick={() => onRemove(item.id)}
               disabled={item.status === "processing"}
-              className="rounded-lg p-1 text-muted hover:bg-white hover:text-red-500 disabled:opacity-40"
+              className="btn-press rounded-lg p-1 text-muted hover:bg-card hover:text-red-500 disabled:opacity-40"
               aria-label="Remove from queue"
             >
               <Trash2 className="h-3.5 w-3.5" />

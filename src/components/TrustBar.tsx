@@ -29,7 +29,7 @@ export function TrustBar() {
       <div className="mx-auto grid max-w-6xl gap-6 px-4 py-10 sm:grid-cols-2 lg:grid-cols-4 sm:px-6 lg:px-8">
         {items.map((item) => (
           <div key={item.title} className="flex items-start gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-white text-primary shadow-[var(--shadow-soft)]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-card text-primary shadow-[var(--shadow-soft)]">
               <item.icon className="h-5 w-5" strokeWidth={1.75} />
             </div>
             <div>

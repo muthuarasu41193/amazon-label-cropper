@@ -70,8 +70,8 @@ export function Pricing() {
               key={plan.name}
               className={`relative flex flex-col rounded-[var(--radius-card)] border p-6 sm:p-8 ${
                 plan.highlighted
-                  ? "border-primary bg-white shadow-[var(--shadow-soft-lg)] ring-1 ring-primary/10"
-                  : "border-border bg-white shadow-[var(--shadow-soft)]"
+                  ? "border-primary bg-card shadow-[var(--shadow-soft-lg)] ring-1 ring-primary/10"
+                  : "border-border bg-card shadow-[var(--shadow-soft)]"
               }`}
             >
               {plan.highlighted && (
@@ -103,7 +103,7 @@ export function Pricing() {
                 className={`mt-8 inline-flex items-center justify-center rounded-[12px] px-4 py-2.5 text-sm font-medium transition-colors ${
                   plan.highlighted
                     ? "bg-primary text-white shadow-[var(--shadow-soft)] hover:bg-primary-hover"
-                    : "border border-border bg-white text-text hover:bg-surface"
+                    : "border border-border bg-card text-text hover:bg-surface"
                 }`}
               >
                 {plan.cta}

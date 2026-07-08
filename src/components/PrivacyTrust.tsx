@@ -42,7 +42,7 @@ export function PrivacyTrust() {
             <ul className="mt-8 space-y-5">
               {privacyPoints.map((point) => (
                 <li key={point.title} className="flex gap-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-white text-primary shadow-[var(--shadow-soft)]">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-card text-primary shadow-[var(--shadow-soft)]">
                     <point.icon className="h-5 w-5" strokeWidth={1.75} />
                   </div>
                   <div>
@@ -63,7 +63,7 @@ export function PrivacyTrust() {
           </div>
 
           <div className="flex flex-col items-center gap-6">
-            <div className="w-full max-w-sm rounded-[var(--radius-card)] border border-border bg-white p-8 text-center shadow-[var(--shadow-soft-md)]">
+            <div className="w-full max-w-sm rounded-[var(--radius-card)] border border-border bg-card p-8 text-center shadow-[var(--shadow-soft-md)]">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
                 <Shield className="h-8 w-8" strokeWidth={1.5} />
               </div>
@@ -84,11 +84,11 @@ export function PrivacyTrust() {
             </div>
 
             <div className="grid w-full max-w-sm grid-cols-2 gap-3">
-              <div className="rounded-xl border border-border bg-white px-4 py-3 text-center shadow-[var(--shadow-soft)]">
+              <div className="rounded-xl border border-border bg-card px-4 py-3 text-center shadow-[var(--shadow-soft)]">
                 <p className="text-xs font-semibold text-text">GDPR aligned</p>
                 <p className="mt-0.5 text-[11px] text-muted">EU privacy standards</p>
               </div>
-              <div className="rounded-xl border border-border bg-white px-4 py-3 text-center shadow-[var(--shadow-soft)]">
+              <div className="rounded-xl border border-border bg-card px-4 py-3 text-center shadow-[var(--shadow-soft)]">
                 <p className="text-xs font-semibold text-text">No watermark</p>
                 <p className="mt-0.5 text-[11px] text-muted">Clean output always</p>
               </div>

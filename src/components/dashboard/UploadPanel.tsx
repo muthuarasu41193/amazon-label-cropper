@@ -1,13 +1,18 @@
 "use client";
 
-import { useRef } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import { FileText, Upload, X } from "lucide-react";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import type { Platform } from "@/lib/platforms";
+import { readFileWithProgress } from "@/lib/readFileWithProgress";
+import { useDragState } from "@/lib/useDragOver";
+
+export type UploadPanelHandle = {
+  openFilePicker: () => void;
+};
 
 type UploadPanelProps = {
   platform: Platform;
-  isDragging: boolean;
-  onDragState: (dragging: boolean) => void;
   onFilesSelected: (files: FileList | File[]) => void;
   selectedFile: File | null;
   onClearFile: () => void;
@@ -19,36 +24,62 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function UploadPanel({
-  platform,
-  isDragging,
-  onDragState,
-  onFilesSelected,
-  selectedFile,
-  onClearFile,
-}: UploadPanelProps) {
+export const UploadPanel = forwardRef<UploadPanelHandle, UploadPanelProps>(function UploadPanel(
+  { platform, onFilesSelected, selectedFile, onClearFile },
+  ref,
+) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const { isDragging, onDragEnter, onDragLeave, onDragOver, resetDrag } = useDragState();
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadingName, setUploadingName] = useState("");
+
+  useImperativeHandle(ref, () => ({
+    openFilePicker: () => inputRef.current?.click(),
+  }));
+
+  const ingestFiles = useCallback(
+    async (files: FileList | File[]) => {
+      const pdfFiles = Array.from(files).filter(
+        (f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"),
+      );
+      if (!pdfFiles.length) return;
+
+      for (let i = 0; i < pdfFiles.length; i += 1) {
+        const file = pdfFiles[i];
+        setUploadingName(pdfFiles.length > 1 ? `${file.name} (${i + 1}/${pdfFiles.length})` : file.name);
+        setUploadProgress(0);
+        await readFileWithProgress(file, setUploadProgress);
+      }
+
+      setUploadProgress(null);
+      setUploadingName("");
+      onFilesSelected(pdfFiles);
+    },
+    [onFilesSelected],
+  );
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    onDragState(false);
+    resetDrag();
     if (e.dataTransfer.files?.length) {
-      onFilesSelected(e.dataTransfer.files);
+      ingestFiles(e.dataTransfer.files);
     }
   };
 
+  const isLoading = uploadProgress !== null;
+
   return (
-    <section className="rounded-[var(--radius-card)] border border-border bg-white p-5 shadow-[var(--shadow-soft)]">
+    <section className="rounded-[var(--radius-card)] border border-border bg-card p-5 shadow-[var(--shadow-soft)]">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-text">Upload</h2>
           <p className="mt-0.5 text-xs text-muted">Drag-and-drop or browse PDF files</p>
         </div>
-        {selectedFile && (
+        {selectedFile && !isLoading && (
           <button
             type="button"
             onClick={onClearFile}
-            className="rounded-lg p-1.5 text-muted hover:bg-surface hover:text-text"
+            className="btn-press rounded-lg p-1.5 text-muted hover:bg-surface hover:text-text"
             aria-label="Clear file"
           >
             <X className="h-4 w-4" />
@@ -57,18 +88,15 @@ export function UploadPanel({
       </div>
 
       <label
-        onDragEnter={(e) => {
-          e.preventDefault();
-          onDragState(true);
-        }}
-        onDragOver={(e) => e.preventDefault()}
-        onDragLeave={() => onDragState(false)}
+        onDragEnter={onDragEnter}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
         onDrop={handleDrop}
-        className={`flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-8 transition-all ${
+        className={`flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-8 transition-all duration-200 ${
           isDragging
-            ? "border-primary bg-primary/5"
+            ? "drag-active border-primary bg-primary/10 ring-2 ring-primary/30"
             : "border-border bg-surface hover:border-primary/40 hover:bg-primary/[0.02]"
-        }`}
+        } ${isLoading ? "pointer-events-none opacity-80" : ""}`}
       >
         <input
           ref={inputRef}
@@ -76,17 +104,29 @@ export function UploadPanel({
           accept="application/pdf,.pdf"
           multiple
           className="sr-only"
+          disabled={isLoading}
           onChange={(e) => {
-            if (e.target.files?.length) onFilesSelected(e.target.files);
+            if (e.target.files?.length) ingestFiles(e.target.files);
             e.target.value = "";
           }}
         />
-        <Upload className="mb-2.5 h-7 w-7 text-primary" />
-        <p className="text-sm font-medium text-text">Drop PDF files here</p>
-        <p className="mt-1 text-xs text-muted">or click to browse · multi-file supported</p>
+
+        {isLoading ? (
+          <div className="w-full max-w-xs px-2">
+            <Upload className="mx-auto mb-3 h-7 w-7 animate-pulse text-primary" />
+            <p className="mb-3 text-center text-sm font-medium text-text">Reading {uploadingName}…</p>
+            <ProgressBar value={uploadProgress ?? 0} striped showPercent={false} />
+          </div>
+        ) : (
+          <>
+            <Upload className={`mb-2.5 h-7 w-7 text-primary ${isDragging ? "animate-bounce" : ""}`} />
+            <p className="text-sm font-medium text-text">{isDragging ? "Drop to add files" : "Drop PDF files here"}</p>
+            <p className="mt-1 text-xs text-muted">or click to browse · multi-file supported</p>
+          </>
+        )}
       </label>
 
-      {selectedFile ? (
+      {selectedFile && !isLoading ? (
         <div className="mt-3 flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2.5">
           <div
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
@@ -100,8 +140,8 @@ export function UploadPanel({
           </div>
         </div>
       ) : (
-        <p className="mt-3 text-xs text-muted">{platform.uploadHint}</p>
+        !isLoading && <p className="mt-3 text-xs text-muted">{platform.uploadHint}</p>
       )}
     </section>
   );
-}
+});

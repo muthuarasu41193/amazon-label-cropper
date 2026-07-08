@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Maximize2, RotateCw, ZoomIn, ZoomOut } from "lucide-react";
 import * as pdfjs from "pdfjs-dist";
 import { initPdfJsWorker } from "@/lib/crop-engine";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 type PdfPreviewProps = {
   sourceFile: File | null;
@@ -85,7 +86,7 @@ export function PdfPreview({ sourceFile, outputUrl, statusTitle, statusDetail, i
   };
 
   return (
-    <section className="flex h-full min-h-[480px] flex-col rounded-[var(--radius-card)] border border-border bg-white shadow-[var(--shadow-soft)]">
+    <section className="flex h-full min-h-[480px] flex-col rounded-[var(--radius-card)] border border-border bg-card shadow-[var(--shadow-soft)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
         <div>
           <p className={`text-sm font-medium ${isError ? "text-red-600" : "text-text"}`}>{statusTitle}</p>
@@ -97,7 +98,7 @@ export function PdfPreview({ sourceFile, outputUrl, statusTitle, statusDetail, i
             type="button"
             onClick={() => setActiveTab("source")}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              activeTab === "source" ? "bg-white text-text shadow-sm" : "text-muted hover:text-text"
+              activeTab === "source" ? "bg-card text-text shadow-sm" : "text-muted hover:text-text"
             }`}
           >
             Source
@@ -107,7 +108,7 @@ export function PdfPreview({ sourceFile, outputUrl, statusTitle, statusDetail, i
             onClick={() => setActiveTab("output")}
             disabled={!outputUrl}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 ${
-              activeTab === "output" ? "bg-white text-text shadow-sm" : "text-muted hover:text-text"
+              activeTab === "output" ? "bg-card text-text shadow-sm" : "text-muted hover:text-text"
             }`}
           >
             Output
@@ -183,25 +184,28 @@ export function PdfPreview({ sourceFile, outputUrl, statusTitle, statusDetail, i
         )}
       </div>
 
-      <div className="relative flex-1 overflow-auto bg-[#f3f4f6] p-4">
+      <div className="relative flex-1 overflow-auto bg-preview p-4">
         {activeTab === "output" && outputUrl ? (
           <iframe
             src={outputUrl}
             title="Cropped PDF preview"
-            className="mx-auto h-full min-h-[420px] w-full max-w-2xl rounded-xl border border-border bg-white shadow-sm"
+            className="mx-auto h-full min-h-[420px] w-full max-w-2xl rounded-xl border border-border bg-card shadow-sm"
           />
         ) : sourceFile ? (
           <div className="flex justify-center">
             {rendering && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/60 text-sm text-muted">
-                Rendering preview…
+              <div className="absolute inset-4 flex items-center justify-center rounded-xl bg-card/80 backdrop-blur-sm">
+                <div className="w-full max-w-md space-y-3 px-4">
+                  <Skeleton className="mx-auto h-4 w-32" />
+                  <Skeleton className="h-[380px] w-full rounded-xl" />
+                </div>
               </div>
             )}
-            <canvas ref={canvasRef} className="rounded-xl border border-border bg-white shadow-sm" />
+            <canvas ref={canvasRef} className="rounded-xl border border-border bg-card shadow-sm" />
           </div>
         ) : (
           <div className="flex h-full min-h-[400px] flex-col items-center justify-center text-center">
-            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm">
+            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-card shadow-sm">
               <ZoomIn className="h-6 w-6 text-muted" />
             </div>
             <p className="text-sm font-medium text-text">Live PDF preview</p>

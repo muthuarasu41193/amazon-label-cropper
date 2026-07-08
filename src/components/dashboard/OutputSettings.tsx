@@ -35,7 +35,7 @@ export function OutputSettings({
   };
 
   return (
-    <section className="rounded-[var(--radius-card)] border border-border bg-white p-5 shadow-[var(--shadow-soft)]">
+    <section className="rounded-[var(--radius-card)] border border-border bg-card p-5 shadow-[var(--shadow-soft)]">
       <div className="mb-4 flex items-center gap-2">
         <Settings2 className="h-4 w-4 text-primary" />
         <div>
@@ -50,7 +50,7 @@ export function OutputSettings({
           <select
             value={settings.labelPreset}
             onChange={(e) => selectPreset(e.target.value)}
-            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-text"
+            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-text"
           >
             {PRESET_GROUPS.map((group) => {
               const presets = Object.values(LABEL_PRESETS).filter((p) => p.group === group.id);
@@ -81,7 +81,7 @@ export function OutputSettings({
                 step={1}
                 value={settings.customWidthMm}
                 onChange={(e) => update({ customWidthMm: Number(e.target.value), pageSize: "custom" })}
-                className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-text"
+                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-text"
               />
             </div>
             <div>
@@ -93,7 +93,7 @@ export function OutputSettings({
                 step={1}
                 value={settings.customHeightMm}
                 onChange={(e) => update({ customHeightMm: Number(e.target.value), pageSize: "custom" })}
-                className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-text"
+                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-text"
               />
             </div>
           </div>
@@ -104,7 +104,7 @@ export function OutputSettings({
           <select
             value={settings.pageSize}
             onChange={(e) => update({ pageSize: e.target.value })}
-            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-text"
+            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-text"
           >
             {OUTPUT_SIZE_OPTIONS.map((opt) => (
               <option key={opt.id} value={opt.id}>
@@ -121,7 +121,7 @@ export function OutputSettings({
           <select
             value={settings.fitMode}
             onChange={(e) => update({ fitMode: e.target.value })}
-            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-text"
+            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-text"
           >
             <option value="contain">Contain (fit inside)</option>
             <option value="cover">Cover (fill area)</option>
@@ -144,7 +144,7 @@ export function OutputSettings({
             type="text"
             value={downloadName}
             onChange={(e) => onDownloadNameChange(e.target.value)}
-            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-text"
+            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-text"
             placeholder="labels.pdf"
           />
         </div>

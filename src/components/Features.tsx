@@ -50,7 +50,7 @@ export function Features() {
           {features.map((feature) => (
             <article
               key={feature.title}
-              className="rounded-[var(--radius-card)] border border-border bg-white p-6 shadow-[var(--shadow-soft)] transition-shadow hover:shadow-[var(--shadow-soft-md)]"
+              className="rounded-[var(--radius-card)] border border-border bg-card p-6 shadow-[var(--shadow-soft)] transition-shadow hover:shadow-[var(--shadow-soft-md)]"
             >
               <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-[12px] bg-primary/10 text-primary">
                 <feature.icon className="h-5 w-5" strokeWidth={1.75} />
