@@ -1,3 +1,6 @@
+import { applyLabelPreset } from "./label-presets";
+import type { CropSettings } from "./crop-engine";
+
 export type Platform = {
   id: string;
   name: string;
@@ -8,6 +11,7 @@ export type Platform = {
   category: string;
   labelSizes: string[];
   presetLabel: string;
+  recommendedPresetId: string;
   defaults: {
     cropPreset: string;
     leftPercent: number;
@@ -30,7 +34,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "A",
     category: "marketplace",
     labelSizes: ["4×6", "A6"],
-    presetLabel: "Left-half · invoice text",
+    presetLabel: "Amazon India · invoice text",
+    recommendedPresetId: "amazon-india",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
@@ -51,7 +56,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "e",
     category: "marketplace",
     labelSizes: ["4×6", "4×8"],
-    presetLabel: "Left-half split",
+    presetLabel: "eBay · left-half split",
+    recommendedPresetId: "ebay",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
@@ -72,7 +78,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "Sh",
     category: "dtc",
     labelSizes: ["4×6", "A6"],
-    presetLabel: "Left-half · no invoice",
+    presetLabel: "Shopify · no invoice",
+    recommendedPresetId: "shopify",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
@@ -93,7 +100,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "W",
     category: "dtc",
     labelSizes: ["4×6", "A6"],
-    presetLabel: "Left-half split",
+    presetLabel: "WooCommerce · thermal",
+    recommendedPresetId: "thermal",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
@@ -114,7 +122,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "E",
     category: "marketplace",
     labelSizes: ["4×6"],
-    presetLabel: "Left-half · invoice text",
+    presetLabel: "Etsy · invoice text",
+    recommendedPresetId: "thermal",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
@@ -135,7 +144,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "F",
     category: "marketplace",
     labelSizes: ["4×6", "A6"],
-    presetLabel: "Left-half · 48% width",
+    presetLabel: "Flipkart · 48% width",
+    recommendedPresetId: "amazon-india",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 48,
@@ -156,7 +166,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "M",
     category: "marketplace",
     labelSizes: ["4×6", "A6"],
-    presetLabel: "Left-half · 52% width",
+    presetLabel: "Meesho · 52% width",
+    recommendedPresetId: "amazon-india",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 52,
@@ -177,7 +188,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "Fx",
     category: "carrier",
     labelSizes: ["4×6", "4×8"],
-    presetLabel: "Left-half split",
+    presetLabel: "FedEx · 4×8 thermal",
+    recommendedPresetId: "fedex",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
@@ -198,7 +210,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "UP",
     category: "carrier",
     labelSizes: ["4×6"],
-    presetLabel: "Left-half split",
+    presetLabel: "UPS · thermal 4×6",
+    recommendedPresetId: "ups",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
@@ -219,7 +232,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "DHL",
     category: "carrier",
     labelSizes: ["4×6", "A6"],
-    presetLabel: "Left-half split",
+    presetLabel: "DHL · thermal 4×6",
+    recommendedPresetId: "dhl",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
@@ -240,7 +254,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "US",
     category: "carrier",
     labelSizes: ["4×6", "4×8"],
-    presetLabel: "Left-half split",
+    presetLabel: "USPS · Letter sheet",
+    recommendedPresetId: "8x11",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
@@ -261,7 +276,8 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "∞",
     category: "utility",
     labelSizes: ["4×6", "A6", "Source"],
-    presetLabel: "Left-half · manual",
+    presetLabel: "Manual · custom",
+    recommendedPresetId: "custom",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
@@ -294,6 +310,22 @@ export const SUPPORTED_PLATFORM_IDS = [
 
 export function getPlatform(id: string): Platform {
   return PLATFORMS[id] ?? PLATFORMS.generic;
+}
+
+export function resolveCropSettingsForPlatform(platformId: string): CropSettings {
+  const platform = getPlatform(platformId);
+  const settings = applyLabelPreset(platform.recommendedPresetId);
+
+  // Platform-specific layout tweaks layered on top of the global preset.
+  return {
+    ...settings,
+    cropPreset: platform.defaults.cropPreset,
+    leftPercent: platform.defaults.leftPercent,
+    marginPercent: platform.defaults.marginPercent,
+    includeInvoiceText: platform.defaults.includeInvoiceText,
+    skipBlank: platform.defaults.skipBlank,
+    smartScan: platform.defaults.smartScan,
+  };
 }
 
 export const FEATURED_PLATFORMS = [

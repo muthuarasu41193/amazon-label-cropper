@@ -11,24 +11,14 @@ import { MobileMenuButton, Sidebar } from "@/components/dashboard/Sidebar";
 import { UploadPanel } from "@/components/dashboard/UploadPanel";
 import { PlatformLogo } from "@/components/PlatformLogo";
 import { createCroppedPdf, initPdfJsWorker, type CropProgress, type CropSettings } from "@/lib/crop-engine";
-import { getPlatform } from "@/lib/platforms";
+import { getPlatform, resolveCropSettingsForPlatform } from "@/lib/platforms";
 
 function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 function defaultSettings(platformId: string): CropSettings {
-  const platform = getPlatform(platformId);
-  return {
-    cropPreset: platform.defaults.cropPreset,
-    leftPercent: platform.defaults.leftPercent,
-    marginPercent: platform.defaults.marginPercent,
-    pageSize: "4x6",
-    fitMode: "contain",
-    skipBlank: platform.defaults.skipBlank,
-    includeInvoiceText: platform.defaults.includeInvoiceText,
-    smartScan: platform.defaults.smartScan,
-  };
+  return resolveCropSettingsForPlatform(platformId);
 }
 
 function CropPageContent() {
@@ -316,6 +306,7 @@ function CropPageContent() {
                 onChange={setSettings}
                 downloadName={downloadName}
                 onDownloadNameChange={setDownloadName}
+                recommendedPresetId={platform.recommendedPresetId}
               />
               <BatchQueue
                 items={queue}

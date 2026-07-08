@@ -35,7 +35,9 @@ export function CropControls({
         <SlidersHorizontal className="h-4 w-4 text-primary" />
         <div>
           <h2 className="text-sm font-semibold text-text">Crop Controls</h2>
-          <p className="text-xs text-muted">Preset: {platform.presetLabel}</p>
+          <p className="text-xs text-muted">
+            Preset: {platform.presetLabel}
+          </p>
         </div>
       </div>
 

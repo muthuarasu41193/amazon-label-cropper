@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 import * as pdfjs from "pdfjs-dist";
+import { resolveOutputSize } from "./label-presets";
 import { regionHasContent, scanPageForLabels } from "./label-scanner";
 
 export type CropSettings = {
@@ -11,6 +12,9 @@ export type CropSettings = {
   skipBlank: boolean;
   includeInvoiceText: boolean;
   smartScan: boolean;
+  labelPreset: string;
+  customWidthMm: number;
+  customHeightMm: number;
 };
 
 export type CropProgress = {
@@ -24,11 +28,6 @@ type Box = { left: number; bottom: number; right: number; top: number };
 type Pair = { labelBox: Box; invoiceBox: Box };
 type ProductDetails = { productName: string; quantity: string } | null;
 
-const PAGE_SIZES: Record<string, { width: number; height: number }> = {
-  "4x6": { width: 288, height: 432 },
-  a6: { width: 298, height: 420 },
-};
-
 let workerReady = false;
 
 export function initPdfJsWorker() {
@@ -40,9 +39,9 @@ export function initPdfJsWorker() {
   workerReady = true;
 }
 
-function getOutputSize(cropWidth: number, cropHeight: number, pageSize: string) {
-  if (pageSize === "source") return { width: cropWidth, height: cropHeight };
-  return PAGE_SIZES[pageSize];
+function getOutputSize(cropWidth: number, cropHeight: number, settings: CropSettings) {
+  if (settings.pageSize === "source") return { width: cropWidth, height: cropHeight };
+  return resolveOutputSize(settings) ?? { width: cropWidth, height: cropHeight };
 }
 
 function pairedBoxesForPage(page: PDFPage, settings: CropSettings): Pair[] {
@@ -443,7 +442,7 @@ export async function createCroppedPdf(
       if (await looksBlank(sourcePdf, pdfJsDoc, pageIndex, pair.labelBox, settings, width, height)) continue;
 
       const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
-      const target = getOutputSize(label.width, label.height, settings.pageSize);
+      const target = getOutputSize(label.width, label.height, settings);
       const page = outputPdf.addPage([target.width, target.height]);
       const infoAreaHeight =
         settings.includeInvoiceText && settings.pageSize !== "source" ? Math.min(132, target.height * 0.31) : 0;
