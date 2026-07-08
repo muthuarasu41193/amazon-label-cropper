@@ -3,6 +3,7 @@
 import { Scan, SlidersHorizontal } from "lucide-react";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import type { CropSettings } from "@/lib/crop-engine";
+import { isTopSplitStrategy, getPlatformLayout } from "@/lib/platform-layouts";
 import type { Platform } from "@/lib/platforms";
 
 type CropControlsProps = {
@@ -27,6 +28,8 @@ export function CropControls({
   progressLabel,
 }: CropControlsProps) {
   const manualMode = !settings.smartScan;
+  const profile = getPlatformLayout(platform.id);
+  const isTopSplit = isTopSplitStrategy(profile.strategy) || settings.cropPreset === "top-split";
 
   const update = (partial: Partial<CropSettings>) => onChange({ ...settings, ...partial });
 
@@ -53,10 +56,10 @@ export function CropControls({
           <div>
             <div className="flex items-center gap-1.5 text-sm font-medium text-text">
               <Scan className="h-3.5 w-3.5 text-primary" />
-              Auto-crop (margin detection)
+              Rigid platform scan
             </div>
             <p className="mt-0.5 text-xs text-muted">
-              Scans each page for label regions using ink density and barcode patterns.
+              Uses official {platform.name} layout coordinates with barcode and content validation.
             </p>
           </div>
         </label>
@@ -69,30 +72,50 @@ export function CropControls({
             disabled={settings.smartScan}
             className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-text disabled:opacity-50"
           >
-            <option value="left-half">Labels left, invoices right</option>
+            <option value="left-half">Labels left, invoices right (Amazon)</option>
+            <option value="top-split">Label on top, invoice below (Flipkart / Meesho)</option>
             <option value="right-half">Labels right, invoices left</option>
-            <option value="top-half">Labels on top row</option>
+            <option value="top-half">Labels on top row (2-column)</option>
             <option value="bottom-half">Labels on bottom row</option>
           </select>
         </div>
 
         <div className={manualMode ? "" : "opacity-50 pointer-events-none"}>
-          <div className="mb-3">
-            <div className="mb-1.5 flex items-center justify-between">
-              <label className="text-xs font-medium text-muted">Label column width</label>
-              <span className="text-xs font-semibold text-text">{settings.leftPercent}%</span>
+          {isTopSplit ? (
+            <div className="mb-3">
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="text-xs font-medium text-muted">Label height (top zone)</label>
+                <span className="text-xs font-semibold text-text">{settings.labelHeightPercent}%</span>
+              </div>
+              <input
+                type="range"
+                min={40}
+                max={70}
+                step={0.5}
+                value={settings.labelHeightPercent}
+                onChange={(e) => update({ labelHeightPercent: Number(e.target.value) })}
+                disabled={!manualMode}
+                className="w-full accent-primary"
+              />
             </div>
-            <input
-              type="range"
-              min={35}
-              max={65}
-              step={0.5}
-              value={settings.leftPercent}
-              onChange={(e) => update({ leftPercent: Number(e.target.value) })}
-              disabled={!manualMode}
-              className="w-full accent-primary"
-            />
-          </div>
+          ) : (
+            <div className="mb-3">
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="text-xs font-medium text-muted">Label column width</label>
+                <span className="text-xs font-semibold text-text">{settings.leftPercent}%</span>
+              </div>
+              <input
+                type="range"
+                min={35}
+                max={65}
+                step={0.5}
+                value={settings.leftPercent}
+                onChange={(e) => update({ leftPercent: Number(e.target.value) })}
+                disabled={!manualMode}
+                className="w-full accent-primary"
+              />
+            </div>
+          )}
 
           <div>
             <div className="mb-1.5 flex items-center justify-between">
@@ -119,7 +142,7 @@ export function CropControls({
             onChange={(e) => update({ skipBlank: e.target.checked })}
             className="rounded border-border"
           />
-          Skip blank label regions
+          Skip blank and invoice-only pages
         </label>
       </div>
 

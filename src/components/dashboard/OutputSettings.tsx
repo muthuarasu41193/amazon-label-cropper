@@ -16,6 +16,7 @@ type OutputSettingsProps = {
   downloadName: string;
   onDownloadNameChange: (name: string) => void;
   recommendedPresetId?: string;
+  platformId?: string;
 };
 
 export function OutputSettings({
@@ -24,11 +25,13 @@ export function OutputSettings({
   downloadName,
   onDownloadNameChange,
   recommendedPresetId,
+  platformId,
 }: OutputSettingsProps) {
   const update = (partial: Partial<CropSettings>) => onChange({ ...settings, ...partial });
 
   const activePreset = getLabelPreset(settings.labelPreset);
   const isCustom = settings.labelPreset === "custom";
+  const isAmazon = (platformId ?? settings.platformId) === "amazon";
 
   const selectPreset = (presetId: string) => {
     onChange(applyLabelPreset(presetId));
@@ -128,15 +131,17 @@ export function OutputSettings({
           </select>
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-text">
-          <input
-            type="checkbox"
-            checked={settings.includeInvoiceText}
-            onChange={(e) => update({ includeInvoiceText: e.target.checked })}
-            className="rounded border-border"
-          />
-          Add product name and quantity
-        </label>
+        {isAmazon && (
+          <label className="flex items-center gap-2 text-sm text-text">
+            <input
+              type="checkbox"
+              checked={settings.includeInvoiceText}
+              onChange={(e) => update({ includeInvoiceText: e.target.checked })}
+              className="rounded border-border"
+            />
+            Add product name and quantity (Amazon only)
+          </label>
+        )}
 
         <div>
           <label className="mb-1.5 block text-xs font-medium text-muted">Output filename</label>

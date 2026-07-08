@@ -1,12 +1,20 @@
 import type { CropSettings } from "./crop-engine";
-
-type Box = { left: number; bottom: number; right: number; top: number };
+import {
+  getPlatformLayout,
+  isTopSplitStrategy,
+  rigidBoxesForPage,
+  type Box,
+  type Pair,
+} from "./platform-layouts";
 
 const LABEL_TEXT_PATTERN =
-  /\b(ship\s*to|ship\s*from|deliver\s*to|shipment|tracking|awb|fba|amazon|courier|consignee|pickup|order\s*(?:id|no|number)|shipment\s*id|carrier|destination|return\s*to|sold\s*by|fulfillment|waybill|barcode|dispatch|consignment)\b/i;
+  /\b(ship\s*to|ship\s*from|deliver\s*to|shipment|tracking|awb|fba|amazon|courier|consignee|pickup|order\s*(?:id|no|number)|shipment\s*id|carrier|destination|return\s*to|sold\s*by|fulfillment|waybill|barcode|dispatch|consignment|ekart|shadowfax|delhivery|valmo|meesho|flipkart)\b/i;
 
 const INVOICE_TEXT_PATTERN =
-  /\b(description|invoice|tax\s*invoice|qty|quantity|unit\s*price|hsn|gst|subtotal|amount|bill\s*to)\b/i;
+  /\b(description|invoice|tax\s*invoice|qty|quantity|unit\s*price|hsn|gst|subtotal|amount|bill\s*to|cgst|sgst|igst|gstin)\b/i;
+
+const INVOICE_ONLY_PATTERN =
+  /\b(tax\s*invoice|invoice\s*number|invoice\s*date|amount\s*in\s*words|authorized\s*signatory|place\s*of\s*supply)\b/i;
 
 function pdfBoxToCanvasRect(box: Box, pageWidth: number, pageHeight: number, viewport: { width: number; height: number }) {
   const x = (box.left / pageWidth) * viewport.width;
@@ -98,14 +106,72 @@ function scoreRegionPixels(imageData: ImageData, canvasWidth: number, rect: { x:
   return { density, barcodeScore };
 }
 
-function generateCandidateBoxes(pageWidth: number, pageHeight: number, settings: CropSettings) {
+async function renderPage(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pdfPage: any,
+  scale = 2,
+) {
+  const viewport = pdfPage.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Could not create canvas context");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+  return { canvas, ctx, viewport };
+}
+
+function scoreLabelRegion(
+  imageData: ImageData,
+  viewport: { width: number; height: number },
+  box: Box,
+  pageWidth: number,
+  pageHeight: number,
+  regionText: string,
+) {
+  const rect = pdfBoxToCanvasRect(box, pageWidth, pageHeight, viewport);
+  const { density, barcodeScore } = scoreRegionPixels(imageData, viewport.width, rect);
+
+  const hasLabelText = LABEL_TEXT_PATTERN.test(regionText);
+  const hasInvoiceText = INVOICE_TEXT_PATTERN.test(regionText);
+  const textScore = hasLabelText ? 0.35 : 0;
+  const invoicePenalty = hasInvoiceText && !hasLabelText ? -0.35 : 0;
+
+  const score = density * 0.45 + barcodeScore + textScore + invoicePenalty;
+  return { score, density, hasLabelText, hasInvoiceText, hasBarcode: barcodeScore > 0 };
+}
+
+/** Returns true when the page is invoice-only (no shipping label content). */
+function isInvoiceOnlyPage(
+  scored: { hasLabelText: boolean; hasInvoiceText: boolean; hasBarcode: boolean; density: number }[],
+) {
+  const anyLabelContent = scored.some(
+    (s) => s.hasLabelText || s.hasBarcode || (s.density > 0.04 && !s.hasInvoiceText),
+  );
+  if (anyLabelContent) return false;
+
+  const allInvoice = scored.every((s) => s.hasInvoiceText && !s.hasLabelText && !s.hasBarcode);
+  const lowDensity = scored.every((s) => s.density < 0.025);
+
+  return allInvoice || lowDensity;
+}
+
+function generateAutoCandidateBoxes(pageWidth: number, pageHeight: number, settings: CropSettings) {
   const margin = Math.min(pageWidth, pageHeight) * (Number(settings.marginPercent) / 100);
   const candidates: Box[] = [];
 
-  const colWidths = [0.42, 0.48, 0.52, 0.55];
-  const rowHeights = [0.4, 0.46, 0.5];
+  const profile = getPlatformLayout(settings.platformId ?? "generic");
+
+  // Platform-priority rigid candidates first.
+  const rigid = rigidBoxesForPage(pageWidth, pageHeight, profile, settings);
+  for (const pair of rigid) {
+    candidates.push(pair.labelBox);
+  }
+
+  const colWidths = [0.42, 0.48, 0.5, 0.52, 0.55];
+  const rowHeights = [0.4, 0.46, 0.5, 0.55, 0.58];
   const colStarts = [0, 0.02, 0.48, 0.5, 0.52];
-  const rowStarts = [0, 0.02, 0.48, 0.5, 0.52];
+  const rowStarts = [0, 0.02, 0.42, 0.48, 0.5, 0.52];
 
   for (const colStart of colStarts) {
     for (const rowStart of rowStarts) {
@@ -124,31 +190,27 @@ function generateCandidateBoxes(pageWidth: number, pageHeight: number, settings:
     }
   }
 
-  const halfW = pageWidth * (Number(settings.leftPercent) / 100);
-  const halfH = pageHeight / 2;
-
-  const presetBoxes: Box[] = [
-    { left: margin, bottom: halfH + margin, right: halfW - margin, top: pageHeight - margin },
-    { left: margin, bottom: margin, right: halfW - margin, top: halfH - margin },
-    { left: pageWidth - halfW + margin, bottom: halfH + margin, right: pageWidth - margin, top: pageHeight - margin },
-    { left: pageWidth - halfW + margin, bottom: margin, right: pageWidth - margin, top: halfH - margin },
-    { left: margin, bottom: halfH + margin, right: pageWidth - margin, top: pageHeight - margin },
-    { left: margin, bottom: margin, right: pageWidth - margin, top: halfH - margin },
-    { left: margin, bottom: margin, right: halfW - margin, top: halfH - margin },
-    { left: halfW + margin, bottom: margin, right: pageWidth - margin, top: halfH - margin },
-  ];
-
-  candidates.push(...presetBoxes);
   return dedupeBoxes(candidates, 0.65);
 }
 
-function findInvoiceBoxForLabel(labelBox: Box, pageWidth: number, pageHeight: number, margin: number) {
+function findInvoiceBoxForLabel(labelBox: Box, pageWidth: number, pageHeight: number, margin: number, settings: CropSettings) {
+  const profile = getPlatformLayout(settings.platformId ?? "generic");
+
+  if (isTopSplitStrategy(profile.strategy)) {
+    return {
+      left: margin,
+      bottom: margin,
+      right: pageWidth - margin,
+      top: labelBox.bottom - margin,
+    };
+  }
+
   const centerX = (labelBox.left + labelBox.right) / 2;
   const isLeft = centerX < pageWidth * 0.45;
 
   if (isLeft) {
     return {
-      left: pageWidth * 0.48 + margin,
+      left: labelBox.right + margin,
       bottom: labelBox.bottom - margin,
       right: pageWidth - margin,
       top: labelBox.top + margin,
@@ -158,13 +220,17 @@ function findInvoiceBoxForLabel(labelBox: Box, pageWidth: number, pageHeight: nu
   return {
     left: margin,
     bottom: labelBox.bottom - margin,
-    right: pageWidth * 0.52 - margin,
+    right: labelBox.left - margin,
     top: labelBox.top + margin,
   };
 }
 
-function selectBestLabels(scored: { box: Box; score: number; density: number }[], pageArea: number) {
-  const minScore = 0.14;
+function selectBestLabels(
+  scored: { box: Box; score: number; density: number }[],
+  pageArea: number,
+  maxLabels: number,
+) {
+  const minScore = 0.12;
   const sorted = [...scored].sort((a, b) => b.score - a.score);
   const selected: { box: Box; score: number; density: number }[] = [];
 
@@ -172,10 +238,11 @@ function selectBestLabels(scored: { box: Box; score: number; density: number }[]
     if (candidate.score < minScore) continue;
 
     const areaRatio = boxArea(candidate.box) / pageArea;
-    if (areaRatio > 0.7 || areaRatio < 0.06) continue;
+    if (areaRatio > 0.72 || areaRatio < 0.05) continue;
 
-    const overlaps = selected.some((s) => boxOverlapRatio(s.box, candidate.box) > 0.38);
+    const overlaps = selected.some((s) => boxOverlapRatio(s.box, candidate.box) > 0.35);
     if (!overlaps) selected.push(candidate);
+    if (selected.length >= maxLabels) break;
   }
 
   selected.sort((a, b) => {
@@ -188,21 +255,10 @@ function selectBestLabels(scored: { box: Box; score: number; density: number }[]
   return selected;
 }
 
-async function renderPage(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  pdfPage: any,
-  scale = 2,
-) {
-  const viewport = pdfPage.getViewport({ scale });
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("Could not create canvas context");
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  await pdfPage.render({ canvasContext: ctx, viewport }).promise;
-  return { canvas, ctx, viewport };
-}
-
+/**
+ * Platform-aware rigid label scan.
+ * Uses official layout coordinates first, then validates with ink density and text markers.
+ */
 export async function scanPageForLabels(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   pdfPage: any,
@@ -212,39 +268,65 @@ export async function scanPageForLabels(
   textContent: any,
   settings: CropSettings,
 ) {
+  const profile = getPlatformLayout(settings.platformId ?? "generic");
+  const margin = Math.min(pageWidth, pageHeight) * (Number(settings.marginPercent) / 100);
   const { ctx, viewport } = await renderPage(pdfPage, 2);
   const imageData = ctx.getImageData(0, 0, viewport.width, viewport.height);
-  const pageArea = pageWidth * pageHeight;
-  const margin = Math.min(pageWidth, pageHeight) * (Number(settings.marginPercent) / 100);
 
-  const candidates = generateCandidateBoxes(pageWidth, pageHeight, settings);
-  const scored: { box: Box; score: number; density: number }[] = [];
+  // Rigid platform layout — primary path for known marketplaces.
+  if (profile.strategy !== "auto") {
+    const rigidPairs = rigidBoxesForPage(pageWidth, pageHeight, profile, settings);
+    const validated: Pair[] = [];
 
-  for (const box of candidates) {
-    const rect = pdfBoxToCanvasRect(box, pageWidth, pageHeight, viewport);
-    const { density, barcodeScore } = scoreRegionPixels(imageData, viewport.width, rect);
+    const scoredRigid = rigidPairs.map((pair) => {
+      const regionText = textItemsInRegion(textContent, pair.labelBox, pageHeight);
+      const metrics = scoreLabelRegion(imageData, viewport, pair.labelBox, pageWidth, pageHeight, regionText);
+      return { pair, ...metrics };
+    });
 
-    const regionText = textItemsInRegion(textContent, box, pageHeight);
-    const textScore = LABEL_TEXT_PATTERN.test(regionText) ? 0.35 : 0;
-    const invoicePenalty = INVOICE_TEXT_PATTERN.test(regionText) && !LABEL_TEXT_PATTERN.test(regionText) ? -0.2 : 0;
+    if (isInvoiceOnlyPage(scoredRigid)) {
+      return [];
+    }
 
-    const areaRatio = boxArea(box) / pageArea;
-    const sizePenalty = areaRatio > 0.65 ? -0.4 : areaRatio < 0.07 ? -0.25 : 0;
+    for (const item of scoredRigid) {
+      const isBlank = item.density < 0.018;
+      const isInvoice = item.hasInvoiceText && !item.hasLabelText && !item.hasBarcode;
 
-    const score = density * 0.45 + barcodeScore + textScore + invoicePenalty + sizePenalty;
-    scored.push({ box, score, density });
+      if (isBlank || isInvoice) continue;
+
+      validated.push(item.pair);
+    }
+
+    if (validated.length > 0) return validated;
+
+    // Fallback: accept rigid boxes with any content if not invoice-only page.
+    const hasAnyContent = scoredRigid.some((s) => s.density > 0.02);
+    if (hasAnyContent && !isInvoiceOnlyPage(scoredRigid)) {
+      return rigidPairs.filter((_, i) => scoredRigid[i].density > 0.02);
+    }
   }
 
-  let selected = selectBestLabels(scored, pageArea);
+  // Auto-detect fallback for generic/custom platforms.
+  const pageArea = pageWidth * pageHeight;
+  const candidates = generateAutoCandidateBoxes(pageWidth, pageHeight, settings);
+  const scored: { box: Box; score: number; density: number; hasLabelText: boolean; hasInvoiceText: boolean; hasBarcode: boolean }[] = [];
+
+  for (const box of candidates) {
+    const regionText = textItemsInRegion(textContent, box, pageHeight);
+    const metrics = scoreLabelRegion(imageData, viewport, box, pageWidth, pageHeight, regionText);
+    scored.push({ box, ...metrics });
+  }
+
+  let selected = selectBestLabels(scored, pageArea, profile.labelsPerPage);
 
   if (selected.length === 0) {
-    const fallback = scored.filter((s) => s.density > 0.04).sort((a, b) => b.density - a.density).slice(0, 2);
+    const fallback = scored.filter((s) => s.density > 0.035 && !s.hasInvoiceText).sort((a, b) => b.density - a.density).slice(0, profile.labelsPerPage);
     selected = fallback;
   }
 
   return selected.map((item) => ({
     labelBox: item.box,
-    invoiceBox: findInvoiceBoxForLabel(item.box, pageWidth, pageHeight, margin),
+    invoiceBox: findInvoiceBoxForLabel(item.box, pageWidth, pageHeight, margin, settings),
     score: item.score,
   }));
 }
@@ -261,4 +343,27 @@ export async function regionHasContent(
   const imageData = ctx.getImageData(0, 0, viewport.width, viewport.height);
   const { density } = scoreRegionPixels(imageData, viewport.width, rect);
   return density > 0.018;
+}
+
+/** Detect if an entire page is invoice-only or blank — should be skipped entirely. */
+export async function isPageSkippable(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pdfPage: any,
+  pageWidth: number,
+  pageHeight: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  textContent: any,
+  _settings: CropSettings,
+) {
+  const fullPageText = textItemsInRegion(textContent, { left: 0, bottom: 0, right: pageWidth, top: pageHeight }, pageHeight);
+  const isInvoicePage = INVOICE_ONLY_PATTERN.test(fullPageText) && !LABEL_TEXT_PATTERN.test(fullPageText);
+
+  if (isInvoicePage) return true;
+
+  const { ctx, viewport } = await renderPage(pdfPage, 1.5);
+  const imageData = ctx.getImageData(0, 0, viewport.width, viewport.height);
+  const fullRect = { x: 0, y: 0, w: viewport.width, h: viewport.height };
+  const { density } = scoreRegionPixels(imageData, viewport.width, fullRect);
+
+  return density < 0.012;
 }

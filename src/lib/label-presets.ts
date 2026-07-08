@@ -34,8 +34,10 @@ export const OUTPUT_SIZE_OPTIONS = Object.entries(PAGE_SIZES).map(([id, size]) =
 const base = (
   overrides: Partial<CropSettings> & Pick<CropSettings, "pageSize">,
 ): CropSettings => ({
+  platformId: "generic",
   cropPreset: "left-half",
   leftPercent: 50,
+  labelHeightPercent: 50,
   marginPercent: 1,
   fitMode: "contain",
   skipBlank: true,

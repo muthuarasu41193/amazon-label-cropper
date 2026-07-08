@@ -1,4 +1,5 @@
 import { applyLabelPreset } from "./label-presets";
+import { applyPlatformLayoutToSettings } from "./platform-layouts";
 import type { CropSettings } from "./crop-engine";
 
 export type Platform = {
@@ -15,6 +16,7 @@ export type Platform = {
   defaults: {
     cropPreset: string;
     leftPercent: number;
+    labelHeightPercent: number;
     marginPercent: number;
     includeInvoiceText: boolean;
     skipBlank: boolean;
@@ -34,18 +36,19 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "A",
     category: "marketplace",
     labelSizes: ["4×6", "A6"],
-    presetLabel: "Amazon India · invoice text",
+    presetLabel: "Amazon India · left column",
     recommendedPresetId: "amazon-india",
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
-      marginPercent: 1,
+      labelHeightPercent: 50,
+      marginPercent: 0.5,
       includeInvoiceText: true,
       skipBlank: true,
       smartScan: true,
     },
     uploadHint: "Upload the official Amazon multi-label shipping PDF.",
-    layoutNote: "Labels on the left, tax invoices on the right (default).",
+    layoutNote: "Shipping label on the left (50%), tax invoice on the right — 2 labels per A4 page.",
   },
   ebay: {
     id: "ebay",
@@ -61,6 +64,7 @@ export const PLATFORMS: Record<string, Platform> = {
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
+      labelHeightPercent: 50,
       marginPercent: 1,
       includeInvoiceText: false,
       skipBlank: true,
@@ -83,6 +87,7 @@ export const PLATFORMS: Record<string, Platform> = {
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
+      labelHeightPercent: 50,
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: false,
@@ -105,6 +110,7 @@ export const PLATFORMS: Record<string, Platform> = {
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
+      labelHeightPercent: 50,
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: false,
@@ -127,8 +133,9 @@ export const PLATFORMS: Record<string, Platform> = {
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
+      labelHeightPercent: 50,
       marginPercent: 1,
-      includeInvoiceText: true,
+      includeInvoiceText: false,
       skipBlank: true,
       smartScan: true,
     },
@@ -138,24 +145,25 @@ export const PLATFORMS: Record<string, Platform> = {
   flipkart: {
     id: "flipkart",
     name: "Flipkart",
-    tagline: "Ekart and Flipkart seller panel exports with invoice text extraction.",
+    tagline: "Ekart and Flipkart seller panel exports — label on top, invoice removed.",
     accent: "#2874f0",
     accentRgb: "40, 116, 240",
     icon: "F",
     category: "marketplace",
     labelSizes: ["4×6", "A6"],
-    presetLabel: "Flipkart · 48% width",
+    presetLabel: "Flipkart · top split",
     recommendedPresetId: "amazon-india",
     defaults: {
-      cropPreset: "left-half",
-      leftPercent: 48,
-      marginPercent: 1,
-      includeInvoiceText: true,
+      cropPreset: "top-split",
+      leftPercent: 100,
+      labelHeightPercent: 50,
+      marginPercent: 0.5,
+      includeInvoiceText: false,
       skipBlank: true,
       smartScan: true,
     },
     uploadHint: "Upload Flipkart seller panel shipping PDF export.",
-    layoutNote: "Most exports use left-column labels with invoice on the right.",
+    layoutNote: "Shipping label on top (50%), tax invoice on the bottom — invoice removed automatically.",
   },
   meesho: {
     id: "meesho",
@@ -166,18 +174,19 @@ export const PLATFORMS: Record<string, Platform> = {
     icon: "M",
     category: "marketplace",
     labelSizes: ["4×6", "A6"],
-    presetLabel: "Meesho · 52% width",
+    presetLabel: "Meesho · top split",
     recommendedPresetId: "amazon-india",
     defaults: {
-      cropPreset: "left-half",
-      leftPercent: 52,
-      marginPercent: 0.75,
-      includeInvoiceText: true,
+      cropPreset: "top-split",
+      leftPercent: 100,
+      labelHeightPercent: 58,
+      marginPercent: 0.5,
+      includeInvoiceText: false,
       skipBlank: true,
       smartScan: true,
     },
     uploadHint: "Upload Meesho bulk shipping label PDF.",
-    layoutNote: "Adjust left width if labels look clipped on your template.",
+    layoutNote: "Shipping label on top (58%), tax invoice on the bottom — invoice removed automatically.",
   },
   fedex: {
     id: "fedex",
@@ -193,6 +202,7 @@ export const PLATFORMS: Record<string, Platform> = {
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
+      labelHeightPercent: 50,
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: true,
@@ -215,6 +225,7 @@ export const PLATFORMS: Record<string, Platform> = {
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
+      labelHeightPercent: 50,
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: true,
@@ -237,6 +248,7 @@ export const PLATFORMS: Record<string, Platform> = {
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
+      labelHeightPercent: 50,
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: true,
@@ -259,6 +271,7 @@ export const PLATFORMS: Record<string, Platform> = {
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
+      labelHeightPercent: 50,
       marginPercent: 0.5,
       includeInvoiceText: false,
       skipBlank: true,
@@ -281,8 +294,9 @@ export const PLATFORMS: Record<string, Platform> = {
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
+      labelHeightPercent: 50,
       marginPercent: 1,
-      includeInvoiceText: true,
+      includeInvoiceText: false,
       skipBlank: true,
       smartScan: true,
     },
@@ -316,16 +330,19 @@ export function resolveCropSettingsForPlatform(platformId: string): CropSettings
   const platform = getPlatform(platformId);
   const settings = applyLabelPreset(platform.recommendedPresetId);
 
-  // Platform-specific layout tweaks layered on top of the global preset.
-  return {
+  const withPlatformDefaults: CropSettings = {
     ...settings,
+    platformId,
     cropPreset: platform.defaults.cropPreset,
     leftPercent: platform.defaults.leftPercent,
+    labelHeightPercent: platform.defaults.labelHeightPercent,
     marginPercent: platform.defaults.marginPercent,
     includeInvoiceText: platform.defaults.includeInvoiceText,
     skipBlank: platform.defaults.skipBlank,
     smartScan: platform.defaults.smartScan,
   };
+
+  return applyPlatformLayoutToSettings(platformId, withPlatformDefaults);
 }
 
 export const FEATURED_PLATFORMS = [

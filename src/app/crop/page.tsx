@@ -353,6 +353,7 @@ function CropPageContent() {
                 downloadName={downloadName}
                 onDownloadNameChange={setDownloadName}
                 recommendedPresetId={platform.recommendedPresetId}
+                platformId={platformId}
               />
               <BatchQueue
                 items={queue}

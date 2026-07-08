@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";

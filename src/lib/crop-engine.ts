@@ -1,11 +1,14 @@
 import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 import * as pdfjs from "pdfjs-dist";
 import { resolveOutputSize } from "./label-presets";
-import { regionHasContent, scanPageForLabels } from "./label-scanner";
+import { getPlatformLayout, rigidBoxesForPage } from "./platform-layouts";
+import { isPageSkippable, regionHasContent, scanPageForLabels } from "./label-scanner";
 
 export type CropSettings = {
+  platformId: string;
   cropPreset: string;
   leftPercent: number;
+  labelHeightPercent: number;
   marginPercent: number;
   pageSize: string;
   fitMode: string;
@@ -46,6 +49,13 @@ function getOutputSize(cropWidth: number, cropHeight: number, settings: CropSett
 
 function pairedBoxesForPage(page: PDFPage, settings: CropSettings): Pair[] {
   const { width, height } = page.getSize();
+  const profile = getPlatformLayout(settings.platformId ?? "generic");
+
+  // Use rigid platform layout when smart scan is off but platform is known.
+  if (profile.strategy !== "auto" || settings.cropPreset === "top-split") {
+    return rigidBoxesForPage(width, height, profile, settings);
+  }
+
   const leftWidth = width * (Number(settings.leftPercent) / 100);
   const rightStart = width - leftWidth;
   const margin = Math.min(width, height) * (Number(settings.marginPercent) / 100);
@@ -65,28 +75,24 @@ function pairedBoxesForPage(page: PDFPage, settings: CropSettings): Pair[] {
     ];
   }
 
-  if (preset === "top-half") {
+  if (preset === "top-half" || preset === "top-split") {
+    const labelHeightPct = settings.labelHeightPercent ?? profile.labelHeightPercent;
+    const splitY = height * (labelHeightPct / 100);
     return [
       {
-        labelBox: { left: margin, bottom: height / 2 + margin, right: leftWidth - margin, top: height - margin },
-        invoiceBox: { left: leftWidth + margin, bottom: height / 2 + margin, right: width - margin, top: height - margin },
-      },
-      {
-        labelBox: { left: leftWidth + margin, bottom: height / 2 + margin, right: width - margin, top: height - margin },
-        invoiceBox: { left: margin, bottom: height / 2 + margin, right: leftWidth - margin, top: height - margin },
+        labelBox: { left: margin, bottom: splitY + margin, right: width - margin, top: height - margin },
+        invoiceBox: { left: margin, bottom: margin, right: width - margin, top: splitY - margin },
       },
     ];
   }
 
   if (preset === "bottom-half") {
+    const labelHeightPct = settings.labelHeightPercent ?? 50;
+    const splitY = height * (labelHeightPct / 100);
     return [
       {
-        labelBox: { left: margin, bottom: margin, right: leftWidth - margin, top: height / 2 - margin },
-        invoiceBox: { left: leftWidth + margin, bottom: margin, right: width - margin, top: height / 2 - margin },
-      },
-      {
-        labelBox: { left: leftWidth + margin, bottom: margin, right: width - margin, top: height / 2 - margin },
-        invoiceBox: { left: margin, bottom: margin, right: leftWidth - margin, top: height / 2 - margin },
+        labelBox: { left: margin, bottom: margin, right: width - margin, top: splitY - margin },
+        invoiceBox: { left: margin, bottom: splitY + margin, right: width - margin, top: height - margin },
       },
     ];
   }
@@ -277,7 +283,8 @@ async function extractProductDetails(
   allPairs: Pair[][],
   settings: CropSettings,
 ) {
-  if (!settings.includeInvoiceText) return [] as ProductDetails[];
+  // Product name and quantity extraction is Amazon-only.
+  if (!settings.includeInvoiceText || settings.platformId !== "amazon") return [] as ProductDetails[];
   initPdfJsWorker();
 
   const loadingTask = pdfjs.getDocument({ data: pdfBytes.slice(0) });
@@ -321,15 +328,15 @@ function drawProductDetails(
   page.drawText("Product Name -", { x: padding, y, size: labelSize, font: boldFont, color: rgb(0, 0, 0) });
   y -= 10;
 
-  const productLines = wrapText(details?.productName || "Not detected", font, bodySize, maxWidth).slice(0, 8);
+  const productLines = wrapText(details?.productName || "", font, bodySize, maxWidth).slice(0, 8);
   for (const line of productLines) {
     if (y < 16) break;
     page.drawText(line, { x: padding, y, size: bodySize, font, color: rgb(0, 0, 0) });
     y -= 8;
   }
 
-  if (y >= 8) {
-    page.drawText(`Quantity - ${makePdfTextSafe(details?.quantity || "Not detected")}`, {
+  if (y >= 8 && details?.quantity) {
+    page.drawText(`Quantity - ${makePdfTextSafe(details.quantity)}`, {
       x: padding,
       y,
       size: labelSize,
@@ -351,7 +358,7 @@ async function looksBlank(
 ) {
   if (!settings.skipBlank) return false;
 
-  if (pdfJsDoc && settings.smartScan) {
+  if (pdfJsDoc) {
     const pdfPage = await pdfJsDoc.getPage(pageIndex + 1);
     const hasContent = await regionHasContent(pdfPage, box, pageWidth, pageHeight);
     return !hasContent;
@@ -385,14 +392,22 @@ async function resolvePagePairs(
       percent: Math.round(((pageIndex + 0.5) / sourcePages.length) * 60),
     });
 
-    if (settings.smartScan && pdfJsDoc) {
+    if (pdfJsDoc) {
       const pdfPage = await pdfJsDoc.getPage(pageIndex + 1);
       const textContent = await pdfPage.getTextContent();
-      const detected = await scanPageForLabels(pdfPage, width, height, textContent, settings);
 
-      if (detected.length > 0) {
-        allPairs.push(detected);
+      // Skip invoice-only or blank pages entirely — no empty output pages.
+      if (await isPageSkippable(pdfPage, width, height, textContent, settings)) {
+        allPairs.push([]);
         continue;
+      }
+
+      if (settings.smartScan) {
+        const detected = await scanPageForLabels(pdfPage, width, height, textContent, settings);
+        if (detected.length > 0) {
+          allPairs.push(detected);
+          continue;
+        }
       }
     }
 
@@ -430,6 +445,8 @@ export async function createCroppedPdf(
 
   onProgress?.({ phase: "cropping", percent: 65 });
 
+  const showProductInfo = settings.includeInvoiceText && settings.platformId === "amazon";
+
   for (let pageIndex = 0; pageIndex < sourcePages.length; pageIndex += 1) {
     const pairs = allPairs[pageIndex];
     const { width, height } = sourcePages[pageIndex].getSize();
@@ -438,14 +455,13 @@ export async function createCroppedPdf(
       const details = productDetails[detailsIndex] || null;
       detailsIndex += 1;
 
-      if (settings.includeInvoiceText && !isDetected(details)) continue;
       if (await looksBlank(sourcePdf, pdfJsDoc, pageIndex, pair.labelBox, settings, width, height)) continue;
 
       const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
       const target = getOutputSize(label.width, label.height, settings);
       const page = outputPdf.addPage([target.width, target.height]);
       const infoAreaHeight =
-        settings.includeInvoiceText && settings.pageSize !== "source" ? Math.min(132, target.height * 0.31) : 0;
+        showProductInfo && settings.pageSize !== "source" ? Math.min(132, target.height * 0.31) : 0;
       const labelAreaHeight = target.height - infoAreaHeight;
 
       page.drawRectangle({ x: 0, y: 0, width: target.width, height: target.height, color: rgb(1, 1, 1) });
