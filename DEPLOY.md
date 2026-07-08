@@ -32,6 +32,20 @@ If you use Cloudflare Git integration, set **Settings → Builds**:
 
 Optional: add repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` to enable `.github/workflows/deploy-cloudflare.yml`.
 
+## Vercel
+
+**URL:** https://amazon-label-cropper.vercel.app
+
+Connected to the GitHub repo — each push to `master` triggers a production deploy.
+
+Manual deploy:
+
+```bash
+npx vercel deploy --prod
+```
+
+**Important:** Do not set `GITHUB_PAGES=true` on Vercel (site runs at domain root, not a GitHub subpath). Legacy `index.html` / `cropper.html` at the repo root are excluded via `.vercelignore`.
+
 **Note:** Do not use `GITHUB_PAGES=true` for Cloudflare — the Workers URL is at the domain root, not a GitHub subpath.
 
 ## Run locally

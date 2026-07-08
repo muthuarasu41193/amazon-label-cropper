@@ -1,8 +1,20 @@
 {
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
   "redirects": [
     {
       "source": "/cropper.html",
-      "destination": "/crop",
+      "destination": "/crop/",
+      "permanent": false
+    },
+    {
+      "source": "/crop.html",
+      "destination": "/crop/",
+      "permanent": false
+    },
+    {
+      "source": "/index.html",
+      "destination": "/",
       "permanent": false
     }
   ],

@@ -1,0 +1,10 @@
+# Legacy static site — superseded by Next.js app in src/
+index.html
+cropper.html
+crop.html
+js/
+css/
+
+# Build artifacts
+.next/
+tsconfig.tsbuildinfo
