@@ -207,7 +207,7 @@ function findHeader(rows: ReturnType<typeof itemRows>) {
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
     const description = row.items.find((item) => /description/i.test(item.text));
-    const qty = row.items.find((item) => /^qty$/i.test(item.text) || /^quantity$/i.test(item.text));
+    const qty = row.items.find((item) => /^qty\.?$/i.test(item.text) || /^quantity$/i.test(item.text));
     const unit = row.items.find((item) => /unit\s*price/i.test(item.text) || /^unit$/i.test(item.text));
     const hsn = row.items.find((item) => /^hsn$/i.test(item.text) || /hsn\s*code/i.test(item.text));
 
@@ -239,6 +239,67 @@ function fixedColumnHeader(items: TextItem[]) {
   };
 }
 
+function isDeclarationTableRow(text: string) {
+  return (
+    /\b(self declaration|item type|customer self)\b/i.test(text) ||
+    /\b#\s*seller\s*gstin\b/i.test(text) ||
+    (/\bgstin\b/i.test(text) && /\binvoice\b/i.test(text) && /\bdate\b/i.test(text) && !/description/i.test(text))
+  );
+}
+
+function isRowIndexNotQty(row: ReturnType<typeof itemRows>[number], qty: string, header: NonNullable<ReturnType<typeof findHeader>>) {
+  if (qty !== "1") return false;
+  const indexItem = row.items.find((item) => item.text.trim() === qty);
+  if (!indexItem) return false;
+  if (indexItem.x < header.descriptionX + 25) {
+    return !/[\d,]+\.\d{2}/.test(row.text) && !/\b\d{4,8}\b/.test(row.text);
+  }
+  return false;
+}
+
+/** Collect order quantities from the tax-invoice table, ignoring declaration # column. */
+function findInvoiceQuantity(
+  items: TextItem[],
+  rows: ReturnType<typeof itemRows>,
+  header: NonNullable<ReturnType<typeof findHeader>>,
+) {
+  const quantities: string[] = [];
+
+  for (const row of rows.slice(Math.max(0, header.index + 1))) {
+    if (/\b(total|subtotal|grand\s*total|amount in words|signature|authorized)\b/i.test(row.text)) break;
+    if (isDeclarationTableRow(row.text)) continue;
+    if (/\b(order number|order date|place of supply|place of delivery|bill to|ship to)\b/i.test(row.text)) continue;
+
+    const rowQty = extractQtyFromRow(row, header);
+    if (!rowQty || isRowIndexNotQty(row, rowQty, header)) continue;
+
+    const hasPrice = /[\d,]+\.\d{2}/.test(row.text);
+    const hasHsn = /\b\d{4,8}\b/.test(row.text);
+    const hasDescription = row.items.some(
+      (item) => item.x >= header.descriptionX - 8 && item.x < (header.hsnX ?? header.unitX) - 5 && item.text.trim().length > 2,
+    );
+
+    if (hasPrice || hasHsn || hasDescription) quantities.push(rowQty);
+  }
+
+  if (quantities.length === 1) return quantities[0];
+  if (quantities.length > 1) {
+    return String(quantities.reduce((sum, value) => sum + (Number(value) || 0), 0));
+  }
+
+  const blob = items.map((item) => item.text).join(" ");
+  const labeled = blob.match(/\b(?:qty|quantity)\s*[.:\-]?\s*(\d{1,4})\b/i);
+  if (labeled) return labeled[1];
+
+  for (const row of rows) {
+    if (isDeclarationTableRow(row.text)) continue;
+    const match = row.text.match(/\b\d{4,8}\b\s+(\d{1,4})\s+(?:Rs\.?)?\s*[\d,]/);
+    if (match && !isRowIndexNotQty(row, match[1], header)) return match[1];
+  }
+
+  return extractQuantityFromRowText(blob);
+}
+
 /** Read quantity from the Qty column or the HSN → Qty → Price pattern — never guess from random numbers. */
 function extractQtyFromRow(row: ReturnType<typeof itemRows>[number], header: NonNullable<ReturnType<typeof findHeader>>) {
   if (header.qtyX !== null) {
@@ -265,8 +326,9 @@ function extractQtyFromRow(row: ReturnType<typeof itemRows>[number], header: Non
 }
 
 function isInvoiceLineRow(row: ReturnType<typeof itemRows>[number], header: NonNullable<ReturnType<typeof findHeader>>) {
+  if (isDeclarationTableRow(row.text)) return false;
   const qty = extractQtyFromRow(row, header);
-  if (!qty) return false;
+  if (!qty || isRowIndexNotQty(row, qty, header)) return false;
   const hasHsn = /\b\d{4,8}\b/.test(row.text);
   const hasPrice = /[\d,]+\.\d{2}/.test(row.text);
   return hasHsn || hasPrice;
@@ -314,6 +376,7 @@ function parseProductDetailsFromItems(items: TextItem[]): ProductDetails {
   for (const row of rows.slice(Math.max(0, header.index + 1))) {
     if (/\b(total|subtotal|amount in words|signature|authorized)\b/i.test(row.text)) break;
     if (/\b(order number|order date|invoice|place of supply|place of delivery)\b/i.test(row.text)) continue;
+    if (isDeclarationTableRow(row.text)) continue;
 
     const rawLine = row.items
       .filter((item) => item.x >= header.descriptionX - 4 && item.x < header.unitX - 4)
@@ -342,28 +405,15 @@ function parseProductDetailsFromItems(items: TextItem[]): ProductDetails {
   if (lineItems.length === 0) {
     const joinedDescription = descriptionParts.join(" ").replace(/\s+/g, " ").trim();
     const sku = extractAmazonSku(joinedDescription);
-    let quantity = "";
-
-    for (const row of rows.slice(Math.max(0, header.index + 1))) {
-      if (/\b(total|subtotal|amount in words|signature|authorized)\b/i.test(row.text)) break;
-      const rowQty = extractQtyFromRow(row, header);
-      if (rowQty && isInvoiceLineRow(row, header)) quantity = rowQty;
-    }
-
-    if (!quantity) {
-      for (const row of rows.slice(Math.max(0, header.index + 1))) {
-        if (/\b(total|subtotal)\b/i.test(row.text)) break;
-        const rowQty = extractQtyFromRow(row, header);
-        if (rowQty) quantity = rowQty;
-      }
-    }
+    const quantity = findInvoiceQuantity(items, rows, header);
 
     if (!sku && !quantity) return null;
     return { sku: sku || joinedDescription.slice(0, 48).trim(), quantity };
   }
 
   if (lineItems.length === 1) {
-    return { sku: lineItems[0].sku, quantity: lineItems[0].quantity };
+    const quantity = lineItems[0].quantity || findInvoiceQuantity(items, rows, header);
+    return { sku: lineItems[0].sku, quantity };
   }
 
   const totalQuantity = lineItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
@@ -381,9 +431,8 @@ function formatAmazonSkuQtyLine(details: ProductDetails) {
   const sku = makePdfTextSafe(details.sku || "").trim();
   const qty = makePdfTextSafe(details.quantity || "").trim();
   if (!sku && !qty) return "";
-  if (!sku) return `Qty - ${qty}`;
-  if (!qty) return sku;
-  return `${sku} | Qty - ${qty}`;
+  if (!sku) return `Qty - ${qty || "?"}`;
+  return `${sku} | Qty - ${qty || "?"}`;
 }
 
 async function extractProductDetails(
@@ -404,13 +453,32 @@ async function extractProductDetails(
     const pdfPage = await pdf.getPage(pageIndex + 1);
     const textContent = await pdfPage.getTextContent();
     const pageHeight = sourcePages[pageIndex].getSize().height;
+    const pageWidth = sourcePages[pageIndex].getSize().width;
 
     for (const pair of allPairs[pageIndex]) {
       const normal = textItemsInBox(textContent, pair.invoiceBox, pageHeight, false);
       const flipped = textItemsInBox(textContent, pair.invoiceBox, pageHeight, true);
-      const normalDetails = parseProductDetailsFromItems(normal);
-      const flippedDetails = parseProductDetailsFromItems(flipped);
-      details.push(normalDetails || flippedDetails || null);
+      let parsed = parseProductDetailsFromItems(normal) || parseProductDetailsFromItems(flipped);
+
+      if (!parsed?.quantity) {
+        const wideBox = {
+          left: pageWidth * 0.47,
+          bottom: pair.labelBox.bottom - 4,
+          right: pageWidth,
+          top: pair.labelBox.top + 4,
+        };
+        const wideNormal = textItemsInBox(textContent, wideBox, pageHeight, false);
+        const wideFlipped = textItemsInBox(textContent, wideBox, pageHeight, true);
+        const wideParsed = parseProductDetailsFromItems(wideNormal) || parseProductDetailsFromItems(wideFlipped);
+        if (wideParsed) {
+          parsed = {
+            sku: parsed?.sku || wideParsed.sku,
+            quantity: wideParsed.quantity || parsed?.quantity || "",
+          };
+        }
+      }
+
+      details.push(parsed || null);
     }
   }
 
