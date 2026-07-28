@@ -1,4 +1,4 @@
-import { PLATFORM_LIST, CATEGORY_LABELS, SUGGESTED_TOOLS } from "./platforms.js?v=2.2.0";
+import { PLATFORM_LIST, CATEGORY_LABELS, SUGGESTED_TOOLS } from "./platforms.js?v=2.3.0";
 
 const platformGrid = document.getElementById("platformGrid");
 const toolRoadmap = document.getElementById("toolRoadmap");

@@ -1,5 +1,5 @@
-import { getPlatform } from "./platforms.js?v=2.2.0";
-import { createCroppedPdf, initPdfJsWorker } from "./crop-engine.js?v=2.2.0";
+import { getPlatform } from "./platforms.js?v=2.3.0";
+import { createCroppedPdf, initPdfJsWorker } from "./crop-engine.js?v=2.3.0";
 
 initPdfJsWorker();
 

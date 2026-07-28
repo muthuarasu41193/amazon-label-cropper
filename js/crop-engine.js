@@ -1,4 +1,9 @@
-import { scanPageForLabels, regionHasContent } from "./label-scanner.js?v=2.2.0";
+import { scanPageForLabels, regionHasContent } from "./label-scanner.js?v=2.3.0";
+import {
+  parseInvoiceDetails,
+  isInvoiceDetected,
+  infoAreaHeightForDetails,
+} from "./invoice-parser.js?v=2.3.0";
 
 const { PDFDocument, StandardFonts, rgb } = PDFLib;
 
@@ -184,151 +189,66 @@ function wrapText(text, font, size, maxWidth) {
   return lines;
 }
 
-function itemRows(items) {
-  const rows = [];
-  const sorted = [...items].sort((a, b) => {
-    if (Math.abs(a.y - b.y) > 3) return b.y - a.y;
-    return a.x - b.x;
-  });
+function drawProductDetails(page, details, font, boldFont, target, areaHeight) {
+  if (!isInvoiceDetected(details) || areaHeight <= 0) return;
 
-  for (const item of sorted) {
-    const row = rows.find((candidate) => Math.abs(candidate.y - item.y) <= 3);
-    if (row) {
-      row.items.push(item);
-      row.y = (row.y + item.y) / 2;
-    } else {
-      rows.push({ y: item.y, items: [item] });
+  const items = details.lineItems?.length
+    ? details.lineItems
+    : [{ sku: "", description: details.productName || "", quantity: details.quantity || "" }];
+
+  const padding = 8;
+  const labelSize = 7.5;
+  const bodySize = 6.8;
+  const maxWidth = target.width - padding * 2;
+  let y = areaHeight - padding;
+
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i];
+    if (y < 14) break;
+
+    const heading = items.length > 1 ? `Item ${i + 1}` : "Product";
+    page.drawText(heading, { x: padding, y: y - labelSize, size: labelSize, font: boldFont, color: rgb(0, 0, 0) });
+    y -= labelSize + 2;
+
+    if (item.sku) {
+      page.drawText(`SKU - ${makePdfTextSafe(item.sku)}`, {
+        x: padding,
+        y: y - bodySize,
+        size: bodySize,
+        font,
+        color: rgb(0, 0, 0),
+      });
+      y -= bodySize + 1;
+    }
+
+    const descLines = wrapText(item.description || "Not detected", font, bodySize, maxWidth).slice(0, 3);
+    for (const line of descLines) {
+      if (y < 12) break;
+      page.drawText(line, { x: padding, y: y - bodySize, size: bodySize, font, color: rgb(0, 0, 0) });
+      y -= bodySize + 1;
+    }
+
+    if (y >= 10) {
+      page.drawText(`Qty - ${makePdfTextSafe(item.quantity || "?")}`, {
+        x: padding,
+        y: y - labelSize,
+        size: labelSize,
+        font: boldFont,
+        color: rgb(0, 0, 0),
+      });
+      y -= labelSize + 5;
     }
   }
 
-  return rows
-    .map((row) => {
-      const rowItems = row.items.sort((a, b) => a.x - b.x);
-      return {
-        y: row.y,
-        items: rowItems,
-        text: rowItems.map((item) => item.text).join(" ").replace(/\s+/g, " ").trim(),
-      };
-    })
-    .filter((row) => row.text);
-}
-
-function textItemsInBox(textContent, box, pageHeight, flipY) {
-  return textContent.items
-    .map((item) => {
-      const rawY = item.transform[5];
-      return {
-        text: item.str,
-        x: item.transform[4],
-        y: flipY ? pageHeight - rawY : rawY,
-      };
-    })
-    .filter((item) => item.x >= box.left && item.x <= box.right && item.y >= box.bottom && item.y <= box.top);
-}
-
-function findHeader(rows) {
-  for (let i = 0; i < rows.length; i += 1) {
-    const row = rows[i];
-    const description = row.items.find((item) => /description/i.test(item.text));
-    const qty = row.items.find((item) => /^qty$/i.test(item.text) || /quantity/i.test(item.text));
-    const unit = row.items.find((item) => /unit\s*price/i.test(item.text) || /^unit$/i.test(item.text));
-
-    if (description && (qty || unit)) {
-      return {
-        index: i,
-        descriptionX: description.x,
-        unitX: unit?.x ?? qty?.x ?? description.x + 220,
-        qtyX: qty?.x ?? null,
-      };
-    }
+  if (items.length > 1 && y >= 10 && details.totalQuantity) {
+    page.drawText(`Total Qty - ${details.totalQuantity}`, {
+      x: padding,
+      y: y - labelSize,
+      size: labelSize,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    });
   }
-
-  return null;
-}
-
-function fixedColumnHeader(items) {
-  if (!items.length) return null;
-
-  const xs = items.map((item) => item.x);
-  const left = Math.min(...xs);
-  const right = Math.max(...xs);
-  const width = Math.max(1, right - left);
-
-  return {
-    index: -1,
-    descriptionX: left + width * 0.03,
-    unitX: left + width * 0.6,
-    qtyX: left + width * 0.68,
-  };
-}
-
-function extractQuantityFromRowText(text) {
-  const normalized = text.replace(/₹/g, "Rs.").replace(/\s+/g, " ").trim();
-  const priceThenQty = normalized.match(/(?:Rs\.)?\s*\d[\d,.]*\s+(\d{1,3})\s+(?:Rs\.|\d[\d,.]*)/i);
-  if (priceThenQty) return priceThenQty[1];
-
-  const qtyText = normalized.match(/\b(?:qty|quantity)\D+(\d{1,3})\b/i);
-  if (qtyText) return qtyText[1];
-
-  const smallNumbers = normalized.match(/\b\d{1,3}\b/g) || [];
-  return smallNumbers.find((value) => Number(value) > 0 && Number(value) < 1000) || "";
-}
-
-function parseProductDetailsFromItems(items) {
-  const rows = itemRows(items);
-  const header = findHeader(rows) || fixedColumnHeader(items);
-  if (!header) return null;
-
-  const descriptionParts = [];
-  let quantity = "";
-
-  for (const row of rows.slice(Math.max(0, header.index + 1))) {
-    if (/\b(total|subtotal|tax|amount in words|signature|authorized)\b/i.test(row.text)) break;
-    if (/\b(order number|order date|invoice|place of supply|place of delivery)\b/i.test(row.text)) continue;
-
-    const descriptionText = row.items
-      .filter((item) => item.x >= header.descriptionX - 4 && item.x < header.unitX - 4)
-      .map((item) => item.text)
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .replace(/\bHSN\b.*$/i, "")
-      .replace(/\bHSN\s*Code\b.*$/i, "")
-      .trim();
-
-    if (descriptionText && !/^\d+$/.test(descriptionText) && !/^hsn\b/i.test(descriptionText)) {
-      descriptionParts.push(descriptionText);
-    }
-
-    if (!quantity && header.qtyX !== null) {
-      const qtyItem = row.items.find(
-        (item) => item.x >= header.qtyX - 18 && item.x <= header.qtyX + 45 && /^\d{1,3}$/.test(item.text.trim()),
-      );
-      if (qtyItem) quantity = qtyItem.text.trim();
-    }
-
-    if (!quantity) quantity = extractQuantityFromRowText(row.text);
-
-    if (descriptionParts.length >= 10 && quantity) break;
-  }
-
-  const productName = descriptionParts
-    .join(" ")
-    .replace(/\bHSN\b.*$/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!productName && !quantity) return null;
-
-  return { productName, quantity };
-}
-
-function isDetected(details) {
-  return Boolean(details?.productName || details?.quantity);
-}
-
-function parseInvoiceDetails(textContent, invoiceBox, pageHeight) {
-  const normal = textItemsInBox(textContent, invoiceBox, pageHeight, false);
-  const flipped = textItemsInBox(textContent, invoiceBox, pageHeight, true);
-  return parseProductDetailsFromItems(normal) || parseProductDetailsFromItems(flipped) || null;
 }
 
 async function resolvePagePairs(sourcePages, settings, pdfJsDoc, onProgress) {
@@ -378,36 +298,6 @@ async function isLabelBlank(sourcePdf, pdfJsDoc, pageIndex, box, settings, pageW
   const bytes = await probePdf.save({ useObjectStreams: false });
 
   return bytes.length < 1200;
-}
-
-function drawProductDetails(page, details, font, boldFont, target, areaHeight) {
-  if (!isDetected(details) || areaHeight <= 0) return;
-
-  const padding = 9;
-  const labelSize = 8;
-  const bodySize = 7.2;
-  const maxWidth = target.width - padding * 2;
-  let y = areaHeight - padding - labelSize;
-
-  page.drawText("Product Name -", { x: padding, y, size: labelSize, font: boldFont, color: rgb(0, 0, 0) });
-  y -= 10;
-
-  const productLines = wrapText(details.productName || "Not detected", font, bodySize, maxWidth).slice(0, 8);
-  for (const line of productLines) {
-    if (y < 16) break;
-    page.drawText(line, { x: padding, y, size: bodySize, font, color: rgb(0, 0, 0) });
-    y -= 8;
-  }
-
-  if (y >= 8) {
-    page.drawText(`Quantity - ${makePdfTextSafe(details.quantity || "Not detected")}`, {
-      x: padding,
-      y,
-      size: labelSize,
-      font: boldFont,
-      color: rgb(0, 0, 0),
-    });
-  }
 }
 
 /**
@@ -463,8 +353,11 @@ export async function createCroppedPdf(file, settings, onProgress) {
       const label = await outputPdf.embedPage(sourcePages[pageIndex], pair.labelBox);
       const target = getOutputSize(label.width, label.height, settings.pageSize);
       const page = outputPdf.addPage([target.width, target.height]);
-      const infoAreaHeight =
-        settings.includeInvoiceText && settings.pageSize !== "source" ? Math.min(132, target.height * 0.31) : 0;
+      const infoAreaHeight = infoAreaHeightForDetails(
+        target.height,
+        details,
+        settings.includeInvoiceText && settings.pageSize !== "source",
+      );
       const labelAreaHeight = target.height - infoAreaHeight;
 
       page.drawRectangle({
