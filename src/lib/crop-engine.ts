@@ -207,8 +207,9 @@ function findHeader(rows: ReturnType<typeof itemRows>) {
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
     const description = row.items.find((item) => /description/i.test(item.text));
-    const qty = row.items.find((item) => /^qty$/i.test(item.text) || /quantity/i.test(item.text));
+    const qty = row.items.find((item) => /^qty$/i.test(item.text) || /^quantity$/i.test(item.text));
     const unit = row.items.find((item) => /unit\s*price/i.test(item.text) || /^unit$/i.test(item.text));
+    const hsn = row.items.find((item) => /^hsn$/i.test(item.text) || /hsn\s*code/i.test(item.text));
 
     if (description && (qty || unit)) {
       return {
@@ -216,6 +217,7 @@ function findHeader(rows: ReturnType<typeof itemRows>) {
         descriptionX: description.x,
         unitX: unit?.x ?? qty?.x ?? description.x + 220,
         qtyX: qty?.x ?? null,
+        hsnX: hsn?.x ?? null,
       };
     }
   }
@@ -231,19 +233,52 @@ function fixedColumnHeader(items: TextItem[]) {
   return {
     index: -1,
     descriptionX: left + width * 0.03,
-    unitX: left + width * 0.6,
-    qtyX: left + width * 0.68,
+    unitX: left + width * 0.62,
+    qtyX: left + width * 0.48,
+    hsnX: left + width * 0.38,
   };
+}
+
+/** Read quantity from the Qty column or the HSN → Qty → Price pattern — never guess from random numbers. */
+function extractQtyFromRow(row: ReturnType<typeof itemRows>[number], header: NonNullable<ReturnType<typeof findHeader>>) {
+  if (header.qtyX !== null) {
+    for (const item of row.items) {
+      if (item.x >= header.qtyX - 30 && item.x <= header.qtyX + 80) {
+        const value = item.text.trim();
+        if (/^\d{1,4}$/.test(value)) return value;
+      }
+    }
+  }
+
+  const hsnStart = header.hsnX ?? header.descriptionX + (header.unitX - header.descriptionX) * 0.35;
+  for (const item of row.items) {
+    if (item.x >= hsnStart - 10 && item.x < header.unitX - 8) {
+      const value = item.text.trim();
+      if (/^\d{1,4}$/.test(value)) return value;
+    }
+  }
+
+  const hsnQtyPrice = row.text.match(/\b\d{4,8}\b\s+(\d{1,4})\s+(?:Rs\.?)?\s*[\d,]/);
+  if (hsnQtyPrice) return hsnQtyPrice[1];
+
+  return "";
+}
+
+function isInvoiceLineRow(row: ReturnType<typeof itemRows>[number], header: NonNullable<ReturnType<typeof findHeader>>) {
+  const qty = extractQtyFromRow(row, header);
+  if (!qty) return false;
+  const hasHsn = /\b\d{4,8}\b/.test(row.text);
+  const hasPrice = /[\d,]+\.\d{2}/.test(row.text);
+  return hasHsn || hasPrice;
 }
 
 function extractQuantityFromRowText(text: string) {
   const normalized = text.replace(/₹/g, "Rs.").replace(/\s+/g, " ").trim();
-  const priceThenQty = normalized.match(/(?:Rs\.)?\s*\d[\d,.]*\s+(\d{1,3})\s+(?:Rs\.|\d[\d,.]*)/i);
+  const hsnQtyPrice = normalized.match(/\b\d{4,8}\b\s+(\d{1,4})\s+(?:Rs\.?)?\s*[\d,]/);
+  if (hsnQtyPrice) return hsnQtyPrice[1];
+  const priceThenQty = normalized.match(/(?:Rs\.)?\s*\d[\d,.]*\s+(\d{1,4})\s+(?:Rs\.|\d[\d,.]*)/i);
   if (priceThenQty) return priceThenQty[1];
-  const qtyText = normalized.match(/\b(?:qty|quantity)\D+(\d{1,3})\b/i);
-  if (qtyText) return qtyText[1];
-  const smallNumbers = normalized.match(/\b\d{1,3}\b/g) || [];
-  return smallNumbers.find((value) => Number(value) > 0 && Number(value) < 1000) || "";
+  return "";
 }
 
 /**
@@ -266,19 +301,20 @@ function extractAmazonSku(description: string) {
   return "";
 }
 
+/** @returns {{ sku: string; quantity: string } | null} */
 function parseProductDetailsFromItems(items: TextItem[]): ProductDetails {
   const rows = itemRows(items);
   const header = findHeader(rows) || fixedColumnHeader(items);
   if (!header) return null;
 
   const descriptionParts: string[] = [];
-  let quantity = "";
+  const lineItems: { sku: string; quantity: string }[] = [];
+  let pendingDescription: string[] = [];
 
   for (const row of rows.slice(Math.max(0, header.index + 1))) {
     if (/\b(total|subtotal|amount in words|signature|authorized)\b/i.test(row.text)) break;
     if (/\b(order number|order date|invoice|place of supply|place of delivery)\b/i.test(row.text)) continue;
 
-    // Keep SKU-closing rows even when they don't look like description text.
     const rawLine = row.items
       .filter((item) => item.x >= header.descriptionX - 4 && item.x < header.unitX - 4)
       .map((item) => item.text)
@@ -291,23 +327,48 @@ function parseProductDetailsFromItems(items: TextItem[]): ProductDetails {
     const descriptionText = rawLine.replace(/\bHSN\b.*$/i, "").trim();
     if (descriptionText && !/^\d+$/.test(descriptionText)) {
       descriptionParts.push(descriptionText);
+      pendingDescription.push(descriptionText);
     }
 
-    if (!quantity && header.qtyX !== null) {
-      const qtyItem = row.items.find(
-        (item) => item.x >= header.qtyX! - 18 && item.x <= header.qtyX! + 45 && /^\d{1,3}$/.test(item.text.trim()),
-      );
-      if (qtyItem) quantity = qtyItem.text.trim();
+    const rowQty = extractQtyFromRow(row, header);
+    if (rowQty && isInvoiceLineRow(row, header)) {
+      const joined = pendingDescription.join(" ").replace(/\s+/g, " ").trim();
+      const sku = extractAmazonSku(joined) || joined.slice(0, 48).trim();
+      lineItems.push({ sku, quantity: rowQty });
+      pendingDescription = [];
     }
-
-    if (!quantity) quantity = extractQuantityFromRowText(row.text);
-    if (descriptionParts.length >= 14 && quantity && extractAmazonSku(descriptionParts.join(" "))) break;
   }
 
-  const joinedDescription = descriptionParts.join(" ").replace(/\s+/g, " ").trim();
-  const sku = extractAmazonSku(joinedDescription);
-  if (!sku && !quantity) return null;
-  return { sku: sku || joinedDescription.slice(0, 40).trim(), quantity: quantity || "1" };
+  if (lineItems.length === 0) {
+    const joinedDescription = descriptionParts.join(" ").replace(/\s+/g, " ").trim();
+    const sku = extractAmazonSku(joinedDescription);
+    let quantity = "";
+
+    for (const row of rows.slice(Math.max(0, header.index + 1))) {
+      if (/\b(total|subtotal|amount in words|signature|authorized)\b/i.test(row.text)) break;
+      const rowQty = extractQtyFromRow(row, header);
+      if (rowQty && isInvoiceLineRow(row, header)) quantity = rowQty;
+    }
+
+    if (!quantity) {
+      for (const row of rows.slice(Math.max(0, header.index + 1))) {
+        if (/\b(total|subtotal)\b/i.test(row.text)) break;
+        const rowQty = extractQtyFromRow(row, header);
+        if (rowQty) quantity = rowQty;
+      }
+    }
+
+    if (!sku && !quantity) return null;
+    return { sku: sku || joinedDescription.slice(0, 48).trim(), quantity };
+  }
+
+  if (lineItems.length === 1) {
+    return { sku: lineItems[0].sku, quantity: lineItems[0].quantity };
+  }
+
+  const totalQuantity = lineItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  const skuSummary = lineItems.map((item) => `${item.sku} (x${item.quantity})`).join(" + ");
+  return { sku: skuSummary, quantity: String(totalQuantity) };
 }
 
 function isDetected(details: ProductDetails) {
@@ -318,8 +379,10 @@ function isDetected(details: ProductDetails) {
 function formatAmazonSkuQtyLine(details: ProductDetails) {
   if (!details) return "";
   const sku = makePdfTextSafe(details.sku || "").trim();
-  const qty = makePdfTextSafe(details.quantity || "1").trim() || "1";
+  const qty = makePdfTextSafe(details.quantity || "").trim();
+  if (!sku && !qty) return "";
   if (!sku) return `Qty - ${qty}`;
+  if (!qty) return sku;
   return `${sku} | Qty - ${qty}`;
 }
 

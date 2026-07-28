@@ -157,13 +157,21 @@ function extractQtyFromRow(row, header) {
     if (nearQty.length) return nearQty[0];
   }
 
-  const hsnQtyPrice = row.text.match(/\b\d{4,8}\b\s+(\d{1,4})\s+(?:Rs\.?)?\s*\d/);
+  const hsnQtyPrice = row.text.match(/\b\d{4,8}\b\s+(\d{1,4})\s+(?:Rs\.?)?\s*[\d,]/);
   if (hsnQtyPrice) return hsnQtyPrice[1];
 
   const priceQty = row.text.match(/(?:Rs\.?)?\s*\d[\d,.]*\s+(\d{1,4})\s+(?:Rs\.?|\d[\d,.]*)/i);
   if (priceQty) return priceQty[1];
 
   return "";
+}
+
+function isInvoiceLineRow(row, header) {
+  const qty = extractQtyFromRow(row, header);
+  if (!qty) return false;
+  const hasHsn = /\b\d{4,8}\b/.test(row.text);
+  const hasPrice = /[\d,]+\.\d{2}/.test(row.text);
+  return hasHsn || hasPrice;
 }
 
 function extractDescriptionFromRow(row, header) {
