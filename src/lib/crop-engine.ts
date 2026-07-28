@@ -38,7 +38,13 @@ export type CropProgress = {
 type Box = { left: number; bottom: number; right: number; top: number };
 type Pair = { labelBox: Box; invoiceBox: Box };
 /** Amazon packing line: short seller SKU + quantity (not the full product title). */
-type ProductDetails = { sku: string; quantity: string } | null;
+type LineItem = { sku: string; quantity: string };
+type ProductDetails = {
+  sku: string;
+  quantity: string;
+  /** Every invoice row when the tax invoice has multiple products */
+  lineItems?: LineItem[];
+} | null;
 
 /** A4 page used by Amazon reference croppers so the left label can be enlarged ~2×. */
 const AMAZON_OUTPUT_A4 = { width: 595.28, height: 841.89 };
@@ -363,14 +369,14 @@ function extractAmazonSku(description: string) {
   return "";
 }
 
-/** @returns {{ sku: string; quantity: string } | null} */
+/** @returns product details with every invoice line item preserved */
 function parseProductDetailsFromItems(items: TextItem[]): ProductDetails {
   const rows = itemRows(items);
   const header = findHeader(rows) || fixedColumnHeader(items);
   if (!header) return null;
 
   const descriptionParts: string[] = [];
-  const lineItems: { sku: string; quantity: string }[] = [];
+  const lineItems: LineItem[] = [];
   let pendingDescription: string[] = [];
 
   for (const row of rows.slice(Math.max(0, header.index + 1))) {
@@ -397,8 +403,24 @@ function parseProductDetailsFromItems(items: TextItem[]): ProductDetails {
     if (rowQty && isInvoiceLineRow(row, header)) {
       const joined = pendingDescription.join(" ").replace(/\s+/g, " ").trim();
       const sku = extractAmazonSku(joined) || joined.slice(0, 48).trim();
-      lineItems.push({ sku, quantity: rowQty });
+      if (sku) {
+        lineItems.push({ sku, quantity: rowQty });
+      }
       pendingDescription = [];
+    }
+  }
+
+  if (lineItems.length === 0) {
+    // Fallback: ASIN+(seller SKU) blocks may span rows without a clear Qty column hit
+    const asinBlocks = allAsinSellerSkus(descriptionParts.join(" "));
+    if (asinBlocks.length > 0) {
+      const quantities = findAllInvoiceQuantities(items, rows, header);
+      for (let i = 0; i < asinBlocks.length; i += 1) {
+        lineItems.push({
+          sku: asinBlocks[i],
+          quantity: quantities[i] || quantities[0] || "1",
+        });
+      }
     }
   }
 
@@ -408,31 +430,84 @@ function parseProductDetailsFromItems(items: TextItem[]): ProductDetails {
     const quantity = findInvoiceQuantity(items, rows, header);
 
     if (!sku && !quantity) return null;
-    return { sku: sku || joinedDescription.slice(0, 48).trim(), quantity };
+    return { sku: sku || joinedDescription.slice(0, 48).trim(), quantity, lineItems: undefined };
   }
 
   if (lineItems.length === 1) {
     const quantity = lineItems[0].quantity || findInvoiceQuantity(items, rows, header);
-    return { sku: lineItems[0].sku, quantity };
+    return { sku: lineItems[0].sku, quantity, lineItems };
   }
 
   const totalQuantity = lineItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-  const skuSummary = lineItems.map((item) => `${item.sku} (x${item.quantity})`).join(" + ");
-  return { sku: skuSummary, quantity: String(totalQuantity) };
+  return {
+    sku: lineItems.map((item) => item.sku).join(" + "),
+    quantity: String(totalQuantity),
+    lineItems,
+  };
+}
+
+/** Collect every Qty value from invoice rows (same filters as findInvoiceQuantity). */
+function findAllInvoiceQuantities(
+  items: TextItem[],
+  rows: ReturnType<typeof itemRows>,
+  header: NonNullable<ReturnType<typeof findHeader>>,
+) {
+  const quantities: string[] = [];
+
+  for (const row of rows.slice(Math.max(0, header.index + 1))) {
+    if (/\b(total|subtotal|grand\s*total|amount in words|signature|authorized)\b/i.test(row.text)) break;
+    if (isDeclarationTableRow(row.text)) continue;
+    if (/\b(order number|order date|place of supply|place of delivery|bill to|ship to)\b/i.test(row.text)) continue;
+
+    const rowQty = extractQtyFromRow(row, header);
+    if (!rowQty || isRowIndexNotQty(row, rowQty, header)) continue;
+
+    const hasPrice = /[\d,]+\.\d{2}/.test(row.text);
+    const hasHsn = /\b\d{4,8}\b/.test(row.text);
+    const hasDescription = row.items.some(
+      (item) => item.x >= header.descriptionX - 8 && item.x < (header.hsnX ?? header.unitX) - 5 && item.text.trim().length > 2,
+    );
+
+    if (hasPrice || hasHsn || hasDescription) quantities.push(rowQty);
+  }
+
+  return quantities;
+}
+
+/** Find every `B0... (sellerSku)` pair in invoice description text. */
+function allAsinSellerSkus(description: string) {
+  const skus: string[] = [];
+  const re = /\bB0[A-Z0-9]{8}\b\s*\(\s*([^)]+?)\s*\)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(description)) !== null) {
+    const sku = match[1].replace(/\s+/g, " ").trim();
+    if (sku && !/^B0[A-Z0-9]{8}$/i.test(sku)) skus.push(sku);
+  }
+  return skus;
 }
 
 function isDetected(details: ProductDetails) {
-  return Boolean(details?.sku || details?.quantity);
+  return Boolean(details?.sku || details?.quantity || details?.lineItems?.length);
 }
 
-/** Compact Amazon overlay line matching common India label croppers: `SKU | Qty - 1`. */
-function formatAmazonSkuQtyLine(details: ProductDetails) {
-  if (!details) return "";
+/** One overlay line per product: `SKU | Qty - 1`. */
+function formatAmazonSkuQtyLines(details: ProductDetails): string[] {
+  if (!details) return [];
+
+  if (details.lineItems && details.lineItems.length > 0) {
+    return details.lineItems.map((item) => {
+      const sku = makePdfTextSafe(item.sku || "").trim();
+      const qty = makePdfTextSafe(item.quantity || "").trim() || "?";
+      if (!sku) return `Qty - ${qty}`;
+      return `${sku} | Qty - ${qty}`;
+    });
+  }
+
   const sku = makePdfTextSafe(details.sku || "").trim();
   const qty = makePdfTextSafe(details.quantity || "").trim();
-  if (!sku && !qty) return "";
-  if (!sku) return `Qty - ${qty || "?"}`;
-  return `${sku} | Qty - ${qty || "?"}`;
+  if (!sku && !qty) return [];
+  if (!sku) return [`Qty - ${qty || "?"}`];
+  return [`${sku} | Qty - ${qty || "?"}`];
 }
 
 async function extractProductDetails(
@@ -474,6 +549,10 @@ async function extractProductDetails(
           parsed = {
             sku: parsed?.sku || wideParsed.sku,
             quantity: wideParsed.quantity || parsed?.quantity || "",
+            lineItems:
+              (wideParsed.lineItems && wideParsed.lineItems.length > 0
+                ? wideParsed.lineItems
+                : parsed?.lineItems) || undefined,
           };
         }
       }
@@ -488,7 +567,7 @@ async function extractProductDetails(
 
 /**
  * Amazon-only overlay matching reference croppers (`SKU | Qty - 1`).
- * Drawn near the bottom of an A4 page so the shipping label itself stays full-size.
+ * Multi-item invoices get one line per product stacked upward from the anchor.
  */
 function drawAmazonSkuQtyOverlay(
   page: PDFPage,
@@ -496,23 +575,32 @@ function drawAmazonSkuQtyOverlay(
   font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
   target: { width: number; height: number },
 ) {
-  const line = formatAmazonSkuQtyLine(details);
-  if (!line) return;
+  const lines = formatAmazonSkuQtyLines(details);
+  if (!lines.length) return;
 
-  // Reference success PDF places the overlay around x≈85, y≈185 on A4.
   const fontSize = Math.min(16, Math.max(11, target.width * 0.022));
   const maxWidth = target.width - 100;
-  const text = wrapText(line, font, fontSize, maxWidth)[0] || line;
   const x = Math.min(85, target.width * 0.14);
-  const y = Math.min(185, target.height * 0.22);
+  const lineGap = fontSize + 4;
+  // Reference success PDF places the first overlay around x≈85, y≈185 on A4.
+  let y = Math.min(185, target.height * 0.22);
 
-  page.drawText(text, {
-    x,
-    y,
-    size: fontSize,
-    font,
-    color: rgb(0, 0, 0),
-  });
+  // Stack additional items above the first so they stay in the label footer area.
+  if (lines.length > 1) {
+    y = Math.min(y + (lines.length - 1) * lineGap, target.height * 0.32);
+  }
+
+  for (const raw of lines) {
+    const text = wrapText(raw, font, fontSize, maxWidth)[0] || raw;
+    page.drawText(text, {
+      x,
+      y,
+      size: fontSize,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    y -= lineGap;
+  }
 }
 
 function getAmazonOutputSize(labelWidth: number, labelHeight: number) {

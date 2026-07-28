@@ -144,8 +144,11 @@ export function OutputSettings({
         )}
         {isAmazon && (
           <p className="text-xs text-muted">
-            Amazon output uses full A4 pages so the shipping label stays large. Overlay shows the short seller SKU and quantity (for example{" "}
-            <span className="font-medium text-text">5KUNDANPEN | Qty - 1</span>), not the full product title.
+            Amazon output uses full A4 pages so the shipping label stays large. Overlay lists every
+            invoice line as{" "}
+            <span className="font-medium text-text">SKU | Qty - 1</span>
+            {", "}
+            including multi-item orders (each product on its own line).
           </p>
         )}
 
