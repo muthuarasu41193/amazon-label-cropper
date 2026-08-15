@@ -34,6 +34,14 @@ export type SkuDetails = {
   productId: string;
 };
 
+export type SkuCount = {
+  sku: string;
+  quantity: number;
+};
+
+const SKU_LABELED =
+  /(?:seller\s*sku|sku[\s\r\n]*id|supplier\s*sku|product\s*sku|\bsku)\s*[:.\-]*\s*[\r\n]*\s*([A-Z0-9][A-Z0-9_\-./]{1,47})/gi;
+
 const AMAZON_ORDER = /\b(\d{3}-\d{7}-\d{7})\b/;
 const FLIPKART_ORDER = /\b(OD\d{14,22})\b/i;
 const LABELED_ORDER =
@@ -120,13 +128,18 @@ function extractPin(text: string) {
 function extractQuantity(text: string) {
   const labeled = firstCapture(text, QTY_LABEL);
   if (labeled && Number(labeled) > 0 && Number(labeled) < 500) return labeled;
-
-  const hsnQtyPrice = text.match(/\b\d{4,8}\b\s+(\d{1,4})\s+(?:Rs\.?)?\s*[\d,]/);
-  if (hsnQtyPrice && Number(hsnQtyPrice[1]) > 0 && Number(hsnQtyPrice[1]) < 500) {
-    return hsnQtyPrice[1];
-  }
-
   return "";
+}
+
+/** Pieces for one label/region. Blank or unreadable qty counts as 1. */
+export function parseQuantity(text: string): number {
+  const labeled = firstCapture(
+    text,
+    /(?:\bqty\b|\bquantity\b|\bpcs\b|\bpieces\b|no\.?\s*of\s*(?:items|pcs|pieces))\s*[:.\-]?\s*(\d{1,4})\b/i,
+  );
+  const n = Number(labeled);
+  if (n > 0 && n < 500) return n;
+  return 1;
 }
 
 function extractPayment(text: string) {
@@ -224,54 +237,37 @@ function uniqueSkus(values: string[]) {
   return list;
 }
 
+function labeledSkus(text: string) {
+  return [...text.matchAll(SKU_LABELED)].map((match) => match[1]);
+}
+
 function amazonSkus(text: string) {
   const found: string[] = [];
   const asinParen = [...text.matchAll(/B0[A-Z0-9]{8}\s*\(\s*([^)]{2,48}?)\s*\)/gi)];
   for (const match of asinParen) found.push(match[1]);
-
-  const labeled = [
-    /(?:seller\s*sku|sku)\s*[:.\-]?\s*([A-Z0-9][A-Z0-9 +_\-./]{2,48})/gi,
-    /\bfnsku\s*[:.\-]?\s*(X00[A-Z0-9]{7,10})/gi,
-  ];
-  for (const pattern of labeled) {
-    for (const match of text.matchAll(pattern)) found.push(match[1]);
-  }
+  found.push(...labeledSkus(text));
   return uniqueSkus(found);
 }
 
 function meeshoSkus(text: string) {
-  const found: string[] = [];
-  const labeled = [
-    /(?:sku\s*id|supplier\s*sku|product\s*sku|sku)\s*[:.\-]?\s*([A-Z0-9][A-Z0-9 +_\-./]{2,48})/gi,
-    /(?:product\s*id|catalog\s*id)\s*[:.\-]?\s*(\d{6,14})/gi,
-  ];
-  for (const pattern of labeled) {
-    for (const match of text.matchAll(pattern)) found.push(match[1]);
+  const found: string[] = labeledSkus(text);
+  for (const match of text.matchAll(/(?:product\s*id|catalog\s*id)\s*[:.\-]?\s*(\d{6,14})/gi)) {
+    found.push(match[1]);
   }
   return uniqueSkus(found);
 }
 
 function flipkartSkus(text: string) {
-  const found: string[] = [];
-  const labeled = [
-    /(?:seller\s*sku|sku\s*id|sku)\s*[:.\-]?\s*([A-Z0-9][A-Z0-9 +_\-./]{2,48})/gi,
-    /\bfsn\s*[:.\-]?\s*([A-Z0-9]{10,16})/gi,
-    /\blisting\s*id\s*[:.\-]?\s*([A-Z0-9]{8,20})/gi,
-  ];
-  for (const pattern of labeled) {
-    for (const match of text.matchAll(pattern)) found.push(match[1]);
+  const found: string[] = labeledSkus(text);
+  for (const match of text.matchAll(/\blisting\s*id\s*[:.\-]?\s*([A-Z0-9]{8,20})/gi)) {
+    found.push(match[1]);
   }
-  const fsn = text.match(/\b([A-Z]{4}[A-Z0-9]{12})\b/);
-  if (fsn) found.push(fsn[1]);
   return uniqueSkus(found);
 }
 
 function genericSkus(text: string) {
-  const found: string[] = [];
-  for (const match of text.matchAll(/(?:seller\s*sku|sku\s*id|sku)\s*[:.\-]?\s*([A-Z0-9][A-Z0-9 +_\-./]{2,48})/gi)) {
-    found.push(match[1]);
-  }
-  for (const match of text.matchAll(/\b([A-Z]{2,}[A-Z0-9]*[-_][A-Z0-9][-_A-Z0-9]{1,32})\b/gi)) {
+  const found: string[] = labeledSkus(text);
+  for (const match of text.matchAll(/\b([A-Z]{2,}[A-Z0-9]*[-_][A-Z0-9][-_A-Z0-9]{0,32})\b/gi)) {
     found.push(match[1]);
   }
   return uniqueSkus(found);
@@ -281,11 +277,22 @@ function genericSkus(text: string) {
  * Pull seller SKU / product IDs from OCR or PDF text for Amazon, Meesho, and Flipkart labels.
  * @returns {{ platform: string, sku: string, skus: string[], asin: string, fsn: string, fnsku: string, productId: string }}
  */
-export function extractSkuDetails(text: string, platformHint = "auto"): SkuDetails {
-  const blob = String(text || "")
+function normalizeLabelText(text: string) {
+  return String(text || "")
     .replace(/\u00a0/g, " ")
     .replace(/\b5KU\b/gi, "SKU")
-    .replace(/\b5eller\b/gi, "Seller");
+    .replace(/\bSK0\b/gi, "SKU")
+    .replace(/\b5eller\b/gi, "Seller")
+    .replace(/\bSKUID\b/gi, "SKU ID")
+    .replace(/\bSKU[\s-]*ID\b/gi, "SKU ID");
+}
+
+function isMarketplaceId(sku: string) {
+  return /^B0[A-Z0-9]{8}$/i.test(sku) || /^X00/i.test(sku) || /^[A-Z]{4}[A-Z0-9]{12}$/.test(sku);
+}
+
+export function extractSkuDetails(text: string, platformHint = "auto"): SkuDetails {
+  const blob = normalizeLabelText(text);
   const platform = platformHint !== "auto" && platformHint !== "unknown" ? platformHint : detectPlatform(blob);
 
   const asin = firstCapture(blob, /\b(B0[A-Z0-9]{8})\b/i).toUpperCase();
@@ -508,4 +515,108 @@ export async function extractShipmentsFromPdf(
 
   await pdf.destroy();
   return mergeShipments(collected);
+}
+
+function amazonInvoiceSkuCounts(text: string): SkuCount[] {
+  const skus = uniqueSkus(
+    [...text.matchAll(/B0[A-Z0-9]{8}\s*\(\s*([^)]{2,48}?)\s*\)/gi)].map((match) => match[1]),
+  ).filter((sku) => !isMarketplaceId(sku));
+  if (!skus.length) return [];
+
+  const qtys = [...text.matchAll(/\b\d{4,8}\b\s+(\d{1,4})\s+(?:Rs\.?|INR|[\d,]+\.\d{2})/gi)]
+    .map((match) => Number(match[1]))
+    .filter((n) => n > 0 && n < 500);
+
+  if (skus.length === 1) {
+    return [{ sku: skus[0], quantity: qtys[0] || parseQuantity(text) }];
+  }
+  return skus.map((sku, index) => ({ sku, quantity: qtys[index] || 1 }));
+}
+
+export function emptySkuCount(): SkuCount {
+  return { sku: "", quantity: 1 };
+}
+
+export function skuCountsFromText(text: string, platformHint = "auto"): SkuCount[] {
+  const blob = normalizeLabelText(text);
+  const platform =
+    platformHint !== "auto" && platformHint !== "unknown" ? platformHint : detectPlatform(blob);
+
+  if (platform === "amazon" || platformHint === "auto") {
+    const invoice = amazonInvoiceSkuCounts(blob);
+    if (invoice.length) return invoice;
+  }
+
+  const details = extractSkuDetails(blob, platformHint);
+  if (!details.sku) return [];
+  return [{ sku: details.sku, quantity: parseQuantity(blob) }];
+}
+
+function skuCountsFromItems(items: PdfGlyph[], width: number, height: number, platformHint: string): SkuCount[] {
+  const fullText = itemRows(items);
+  if ((platformHint === "amazon" || platformHint === "auto") && /B0[A-Z0-9]{8}\s*\(/i.test(fullText)) {
+    const invoice = amazonInvoiceSkuCounts(fullText);
+    if (invoice.length) return invoice;
+  }
+
+  const regions: SkuCount[] = [];
+  for (const box of pageBoxes(width, height)) {
+    const regionText = itemRows(itemsInBox(items, box));
+    if (regionText.length < 12) continue;
+    regions.push(...skuCountsFromText(regionText, platformHint));
+  }
+
+  const sellerSkus = regions.filter((row) => !isMarketplaceId(row.sku));
+  if (sellerSkus.length) return sellerSkus;
+  if (regions.length) return regions;
+  return skuCountsFromText(fullText, platformHint);
+}
+
+export function aggregateSkuCounts(rows: SkuCount[]): SkuCount[] {
+  const merged = new Map<string, SkuCount>();
+  for (const row of rows) {
+    const sku = cleanSkuToken(row.sku);
+    if (!sku || isNoiseSku(sku)) continue;
+    const quantity = Number(row.quantity);
+    const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    const key = sku.toUpperCase();
+    const existing = merged.get(key);
+    if (existing) existing.quantity += qty;
+    else merged.set(key, { sku, quantity: qty });
+  }
+  return [...merged.values()].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: "base" }));
+}
+
+export async function extractSkuCountsFromPdf(
+  file: File,
+  options: {
+    platformHint?: string;
+    onProgress?: (progress: { file?: string; page?: number; total?: number; percent?: number }) => void;
+  } = {},
+): Promise<SkuCount[]> {
+  const { platformHint = "auto", onProgress } = options;
+  initPdfJsWorker();
+  const bytes = await file.arrayBuffer();
+  const pdf = await pdfjs.getDocument({ data: bytes }).promise;
+  const collected: SkuCount[] = [];
+
+  for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
+    const page = await pdf.getPage(pageIndex);
+    const viewport = page.getViewport({ scale: 1 });
+    const textContent = await page.getTextContent();
+    const normal = textItemsFromContent(textContent, viewport.height, false);
+    const flipped = textItemsFromContent(textContent, viewport.height, true);
+    const normalFound = skuCountsFromItems(normal, viewport.width, viewport.height, platformHint);
+    const flippedFound = skuCountsFromItems(flipped, viewport.width, viewport.height, platformHint);
+    collected.push(...(normalFound.length >= flippedFound.length ? normalFound : flippedFound));
+    onProgress?.({
+      file: file.name,
+      page: pageIndex,
+      total: pdf.numPages,
+      percent: Math.round((pageIndex / pdf.numPages) * 100),
+    });
+  }
+
+  await pdf.destroy();
+  return collected;
 }

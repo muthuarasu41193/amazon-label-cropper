@@ -11,38 +11,27 @@ import { Button } from "@/components/ui/Button";
 import { initPdfJsWorker } from "@/lib/crop-engine";
 import {
   createOcrWorker,
+  extractSkuCountsFromPdfOcr,
   extractSkuFromImages,
-  recognizePdfPages,
-  shipmentFromOcrResult,
+  skuCountFromOcrResult,
   terminateOcrWorker,
 } from "@/lib/label-ocr";
-import { emptyShipment, extractShipmentsFromPdf } from "@/lib/manifest-parser";
+import {
+  aggregateSkuCounts,
+  emptySkuCount,
+  extractSkuCountsFromPdf,
+  type SkuCount,
+} from "@/lib/manifest-parser";
 import { getPlatform } from "@/lib/platforms";
 import { useDragState } from "@/lib/useDragOver";
 
 type PlatformId = "amazon" | "meesho" | "flipkart";
 type UploadItem = { id: string; file: File; previewUrl: string; kind: "pdf" | "image" };
-type Shipment = ReturnType<typeof emptyShipment>;
 
 const ZONES: { id: PlatformId; name: string; hint: string }[] = [
   { id: "amazon", name: "Amazon Labels", hint: "PNG, JPG, or PDF" },
   { id: "meesho", name: "Meesho Labels", hint: "PNG, JPG, or PDF" },
   { id: "flipkart", name: "Flipkart Labels", hint: "PNG, JPG, or PDF" },
-];
-
-const COLUMNS: [keyof Shipment, string][] = [
-  ["platform", "Platform"],
-  ["awb", "AWB / Tracking"],
-  ["orderId", "Order ID"],
-  ["sku", "SKU"],
-  ["customer", "Customer"],
-  ["city", "City"],
-  ["pin", "PIN"],
-  ["quantity", "Qty"],
-  ["payment", "Payment"],
-  ["amount", "Amount"],
-  ["product", "Product"],
-  ["courier", "Courier"],
 ];
 
 const ACCEPT = /\.(pdf|png|jpe?g)$/i;
@@ -190,13 +179,17 @@ export function ManifestWorkspace() {
     meesho: [],
     flipkart: [],
   });
-  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [rows, setRows] = useState<SkuCount[]>([]);
   const [query, setQuery] = useState("");
   const [sellerName, setSellerName] = useState("");
   const [dispatchDate, setDispatchDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState({ title: "Waiting for shipping labels.", detail: "Drop PNG, JPG, or PDF files into a marketplace tray.", error: false });
+  const [status, setStatus] = useState({
+    title: "Waiting for shipping labels.",
+    detail: "Drop PNG, JPG, or PDF files into a marketplace tray.",
+    error: false,
+  });
 
   useEffect(() => {
     initPdfJsWorker();
@@ -240,7 +233,7 @@ export function ManifestWorkspace() {
     });
     setStatus({
       title: "Files ready",
-      detail: "Press Process Labels to read SKU, AWB, and order details.",
+      detail: "Press Process Labels to read SKU IDs and piece counts.",
       error: false,
     });
   }, []);
@@ -262,82 +255,80 @@ export function ManifestWorkspace() {
     });
   };
 
-  const filtered = shipments.filter((row) => {
+  const filtered = rows.filter((row) => {
     if (!query.trim()) return true;
-    return Object.values(row).join(" ").toLowerCase().includes(query.trim().toLowerCase());
+    return row.sku.toLowerCase().includes(query.trim().toLowerCase());
   });
 
-  const stats = {
-    total: shipments.length,
-    cod: shipments.filter((row) => /cod/i.test(row.payment)).length,
-    prepaid: shipments.filter((row) => /pre/i.test(row.payment)).length,
-    amount: shipments.reduce((sum, row) => sum + (Number(String(row.amount).replace(/,/g, "")) || 0), 0),
-  };
+  const totalPieces = rows.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
 
   async function processLabels() {
     if (!allFiles.length || isProcessing) return;
     setIsProcessing(true);
     setProgress(4);
-    setStatus({ title: "Processing labels…", detail: "Running OCR and reading PDFs for SKU and order details.", error: false });
+    setStatus({
+      title: "Reading SKU IDs…",
+      detail: "Scanning labels for SKU and quantity. Duplicate SKUs are added together.",
+      error: false,
+    });
 
     let worker: Awaited<ReturnType<typeof createOcrWorker>> | null = null;
     try {
       worker = await createOcrWorker();
-      const collected: Shipment[] = [];
+      const collected: SkuCount[] = [];
 
       for (let i = 0; i < allFiles.length; i += 1) {
         const item = allFiles[i];
         setStatus({
-          title: "Processing labels…",
+          title: "Reading SKU IDs…",
           detail: `${getPlatform(item.platform).name} · ${item.file.name} (${i + 1} of ${allFiles.length})`,
           error: false,
         });
 
         if (item.kind === "pdf") {
-          const rows = await extractShipmentsFromPdf(item.file, {
+          let found = await extractSkuCountsFromPdf(item.file, {
             platformHint: item.platform,
             onProgress: (p: { percent?: number }) => {
               setProgress(Math.round(i * (100 / allFiles.length) + ((p.percent || 0) / 100) * (100 / allFiles.length)));
             },
           });
-          if (rows.length) {
-            if (rows.some((row: Shipment) => !row.sku)) {
-              const ocr = await recognizePdfPages(item.file, { platform: item.platform, worker });
-              for (const row of rows) {
-                if (!row.sku && ocr.sku) row.sku = ocr.sku;
-              }
-            }
-            collected.push(...rows.map((row: Shipment) => ({ ...row, platform: row.platform || item.platform })));
-          } else {
-            const ocr = await recognizePdfPages(item.file, { platform: item.platform, worker });
-            const parsed = shipmentFromOcrResult(ocr, item.platform);
-            if (parsed) collected.push(parsed);
+          if (!found.length) {
+            found = await extractSkuCountsFromPdfOcr(item.file, {
+              platform: item.platform,
+              worker,
+              onProgress: (p: { percent?: number }) => {
+                setProgress(Math.round(i * (100 / allFiles.length) + ((p.percent || 0) / 100) * (100 / allFiles.length)));
+              },
+            });
           }
+          collected.push(...found);
         } else {
           const [ocr] = await extractSkuFromImages([item.file], { platform: item.platform, worker });
-          const parsed = shipmentFromOcrResult(ocr, item.platform);
+          const parsed = skuCountFromOcrResult(ocr);
           if (parsed) collected.push(parsed);
         }
         setProgress(Math.round(((i + 1) / allFiles.length) * 100));
       }
 
-      setShipments(collected);
-      if (!collected.length) {
+      const aggregated = aggregateSkuCounts(collected);
+      setRows(aggregated);
+      if (!aggregated.length) {
         setStatus({
-          title: "No shipments found",
-          detail: "Check that files are Amazon, Meesho, or Flipkart labels. You can add a blank row and type details.",
+          title: "No SKU IDs found",
+          detail: "Check that the files are Amazon, Meesho, or Flipkart labels. You can add a row and type the SKU.",
           error: true,
         });
       } else {
+        const pieces = aggregated.reduce((sum, row) => sum + row.quantity, 0);
         setStatus({
-          title: "Manifest ready",
-          detail: `${collected.length} shipment${collected.length === 1 ? "" : "s"} from ${allFiles.length} file${allFiles.length === 1 ? "" : "s"}.`,
+          title: "SKU count ready",
+          detail: `${aggregated.length} SKU${aggregated.length === 1 ? "" : "s"} · ${pieces} piece${pieces === 1 ? "" : "s"} from ${allFiles.length} file${allFiles.length === 1 ? "" : "s"}.`,
           error: false,
         });
       }
     } catch (error) {
       setStatus({
-        title: "Could not process these labels",
+        title: "Could not read these labels",
         detail: error instanceof Error ? error.message : "Check the files and try again.",
         error: true,
       });
@@ -348,18 +339,16 @@ export function ManifestWorkspace() {
   }
 
   function downloadCsv() {
-    const headers = ["#", ...COLUMNS.map(([, label]) => label)];
     const lines = [
-      headers.join(","),
-      ...shipments.map((row, index) =>
-        [index + 1, ...COLUMNS.map(([key]) => `"${String(row[key] ?? "").replace(/"/g, '""')}"`)].join(","),
-      ),
+      "SKU ID,Count",
+      ...rows.map((row) => `"${row.sku.replace(/"/g, '""')}",${Number(row.quantity) || 0}`),
+      `"Total",${totalPieces}`,
     ];
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `dispatch-manifest-${dispatchDate}.csv`;
+    link.download = `sku-count-${dispatchDate}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -368,67 +357,72 @@ export function ManifestWorkspace() {
     const pdf = await PDFDocument.create();
     const font = await pdf.embedFont(StandardFonts.Helvetica);
     const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-    const pageSize = { width: 842, height: 595 };
-    const margin = 28;
-    const cols = [
-      { key: "#", width: 28 },
-      { key: "awb", width: 100 },
-      { key: "orderId", width: 100 },
-      { key: "sku", width: 80 },
-      { key: "city", width: 78 },
-      { key: "pin", width: 48 },
-      { key: "quantity", width: 32 },
-      { key: "payment", width: 54 },
-      { key: "amount", width: 52 },
-      { key: "product", width: 110 },
-      { key: "courier", width: 70 },
-    ];
+    const pageSize = { width: 595.28, height: 841.89 };
+    const margin = 40;
+    const skuWidth = 360;
 
     let page = pdf.addPage([pageSize.width, pageSize.height]);
     let y = pageSize.height - margin;
     const drawHeader = (pageNumber: number) => {
-      page.drawText("Dispatch Manifest", { x: margin, y: y - 16, size: 18, font: bold, color: rgb(0.05, 0.07, 0.12) });
+      page.drawText("SKU Count", { x: margin, y: y - 18, size: 20, font: bold, color: rgb(0.05, 0.07, 0.12) });
       page.drawText(`${sellerName || "Seller"}  ·  ${dispatchDate}`, {
         x: margin,
-        y: y - 34,
+        y: y - 38,
+        size: 10,
+        font,
+        color: rgb(0.25, 0.3, 0.38),
+      });
+      page.drawText(`${rows.length} SKUs  ·  ${totalPieces} pcs  ·  Page ${pageNumber}`, {
+        x: pageSize.width - margin - 220,
+        y: y - 18,
         size: 9,
         font,
         color: rgb(0.25, 0.3, 0.38),
       });
-      page.drawText(`${shipments.length} shipments  ·  Page ${pageNumber}`, {
-        x: pageSize.width - margin - 160,
-        y: y - 16,
-        size: 9,
-        font,
-        color: rgb(0.25, 0.3, 0.38),
+      y -= 64;
+      page.drawRectangle({
+        x: margin,
+        y: y - 6,
+        width: pageSize.width - margin * 2,
+        height: 24,
+        color: rgb(0.93, 0.95, 0.98),
       });
-      y -= 58;
-      let x = margin;
-      page.drawRectangle({ x: margin, y: y - 4, width: pageSize.width - margin * 2, height: 20, color: rgb(0.93, 0.95, 0.98) });
-      for (const col of cols) {
-        const label = col.key === "#" ? "#" : COLUMNS.find(([key]) => key === col.key)?.[1] || col.key;
-        page.drawText(label, { x: x + 4, y: y + 2, size: 7, font: bold, color: rgb(0.2, 0.24, 0.3) });
-        x += col.width;
-      }
-      y -= 8;
+      page.drawText("SKU ID", { x: margin + 10, y: y + 2, size: 10, font: bold, color: rgb(0.2, 0.24, 0.3) });
+      page.drawText("Count", { x: margin + skuWidth + 10, y: y + 2, size: 10, font: bold, color: rgb(0.2, 0.24, 0.3) });
+      y -= 18;
     };
 
     drawHeader(1);
-    shipments.forEach((row, index) => {
-      if (y < margin + 42) {
+    rows.forEach((row) => {
+      if (y < margin + 48) {
         page = pdf.addPage([pageSize.width, pageSize.height]);
         y = pageSize.height - margin;
         drawHeader(pdf.getPageCount());
       }
-      let x = margin;
-      const values: Record<string, string> = { "#": String(index + 1), ...row };
-      for (const col of cols) {
-        let text = String(values[col.key] || "").replace(/[^\x20-\x7E]/g, " ");
-        while (text && font.widthOfTextAtSize(text, 7.5) > col.width - 8) text = text.slice(0, -1);
-        page.drawText(text, { x: x + 4, y, size: 7.5, font, color: rgb(0.08, 0.1, 0.14) });
-        x += col.width;
-      }
-      y -= 18;
+      let sku = String(row.sku || "").replace(/[^\x20-\x7E]/g, " ");
+      while (sku && font.widthOfTextAtSize(sku, 11) > skuWidth - 16) sku = sku.slice(0, -1);
+      page.drawText(sku, { x: margin + 10, y, size: 11, font, color: rgb(0.08, 0.1, 0.14) });
+      page.drawText(String(Number(row.quantity) || 0), {
+        x: margin + skuWidth + 10,
+        y,
+        size: 11,
+        font: bold,
+        color: rgb(0.08, 0.1, 0.14),
+      });
+      y -= 22;
+    });
+
+    if (y < margin + 36) {
+      page = pdf.addPage([pageSize.width, pageSize.height]);
+      y = pageSize.height - margin - 24;
+    }
+    page.drawText("Total pieces", { x: margin + 10, y, size: 11, font: bold, color: rgb(0.08, 0.1, 0.14) });
+    page.drawText(String(totalPieces), {
+      x: margin + skuWidth + 10,
+      y,
+      size: 11,
+      font: bold,
+      color: rgb(0.08, 0.1, 0.14),
     });
 
     const bytes = await pdf.save();
@@ -436,7 +430,7 @@ export function ManifestWorkspace() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `dispatch-manifest-${dispatchDate}.pdf`;
+    link.download = `sku-count-${dispatchDate}.pdf`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -451,19 +445,19 @@ export function ManifestWorkspace() {
             <MobileMenuButton onClick={() => setMobileOpen(true)} />
             <div>
               <h1 className="text-sm font-semibold text-text">Manifest Creator</h1>
-              <p className="hidden text-xs text-muted sm:block">Build a handover sheet from Amazon, Meesho, and Flipkart labels</p>
+              <p className="hidden text-xs text-muted sm:block">SKU ID and total piece count from Amazon, Meesho, and Flipkart labels</p>
             </div>
             <ToolHeaderTabs platformId="amazon" />
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Button variant="outline" size="sm" disabled={!shipments.length} onClick={downloadCsv}>
+            <Button variant="outline" size="sm" disabled={!rows.length} onClick={downloadCsv}>
               <FileText className="h-3.5 w-3.5" />
               CSV
             </Button>
-            <Button size="sm" disabled={!shipments.length} onClick={downloadPdf}>
+            <Button size="sm" disabled={!rows.length} onClick={downloadPdf}>
               <Download className="h-3.5 w-3.5" />
-              PDF manifest
+              PDF
             </Button>
           </div>
         </header>
@@ -505,7 +499,7 @@ export function ManifestWorkspace() {
                 </label>
               </div>
               <p className="mt-3 text-xs text-muted">
-                OCR reads SKU and product IDs from label photos in your browser. Nothing is uploaded.
+                Reads SKU ID and quantity only. Matching SKUs are combined. Blank qty counts as 1.
               </p>
               <Button className="mt-3 w-full" disabled={!allFiles.length || isProcessing} onClick={processLabels}>
                 {isProcessing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
@@ -524,79 +518,80 @@ export function ManifestWorkspace() {
                   <p className={`text-sm font-semibold ${status.error ? "text-danger" : "text-text"}`}>{status.title}</p>
                   <p className="text-xs text-muted">{status.detail}</p>
                 </div>
-                <div className="flex gap-4 text-center">
+                <div className="flex gap-6 text-center">
                   <div>
-                    <p className="text-sm font-semibold">{stats.total}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-muted">Shipments</p>
+                    <p className="text-sm font-semibold">{rows.length}</p>
+                    <p className="text-[10px] uppercase tracking-wide text-muted">SKUs</p>
                   </div>
                   <div>
-                    <p className="text-sm font-semibold">{stats.cod}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-muted">COD</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold">{stats.prepaid}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-muted">Prepaid</p>
+                    <p className="text-sm font-semibold">{totalPieces}</p>
+                    <p className="text-[10px] uppercase tracking-wide text-muted">Total count</p>
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-2 border-b border-border px-4 py-2">
                 <input
                   className="min-h-9 flex-1 rounded-[10px] border border-border bg-background px-3 text-sm"
-                  placeholder="Filter AWB, order ID, SKU…"
+                  placeholder="Filter SKU ID…"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShipments((prev) => [...prev, emptyShipment()])}
-                >
-                  Add blank row
+                <Button variant="ghost" size="sm" onClick={() => setRows((prev) => [...prev, emptySkuCount()])}>
+                  Add SKU
                 </Button>
               </div>
               <div className="overflow-auto">
                 {filtered.length === 0 ? (
                   <div className="grid min-h-[280px] place-items-center text-sm font-medium text-muted">
-                    Manifest rows appear here after you process labels
+                    SKU ID and count appear here after you process labels
                   </div>
                 ) : (
-                  <table className="min-w-[1100px] w-full text-left text-xs">
+                  <table className="w-full text-left text-sm">
                     <thead className="sticky top-0 bg-card text-[10px] uppercase tracking-wide text-muted">
                       <tr>
-                        <th className="px-2 py-2">#</th>
-                        {COLUMNS.map(([key, label]) => (
-                          <th key={key} className="px-2 py-2">
-                            {label}
-                          </th>
-                        ))}
-                        <th />
+                        <th className="w-12 px-4 py-2">#</th>
+                        <th className="px-4 py-2">SKU ID</th>
+                        <th className="w-28 px-4 py-2 text-right">Count</th>
+                        <th className="w-12 px-2 py-2" />
                       </tr>
                     </thead>
                     <tbody>
                       {filtered.map((row, index) => {
-                        const realIndex = shipments.indexOf(row);
+                        const realIndex = rows.indexOf(row);
                         return (
-                          <tr key={`${row.orderId}-${row.awb}-${index}`} className="border-t border-border">
-                            <td className="px-2 py-1 text-muted">{realIndex + 1}</td>
-                            {COLUMNS.map(([key]) => (
-                              <td key={key} className="px-2 py-1">
-                                <input
-                                  className="w-full min-w-[72px] bg-transparent py-1 text-text outline-none"
-                                  value={row[key] || ""}
-                                  onChange={(event) => {
-                                    const next = [...shipments];
-                                    next[realIndex] = { ...next[realIndex], [key]: event.target.value };
-                                    setShipments(next);
-                                  }}
-                                />
-                              </td>
-                            ))}
-                            <td className="px-2 py-1">
+                          <tr key={`${row.sku}-${index}`} className="border-t border-border">
+                            <td className="px-4 py-2 text-muted">{realIndex + 1}</td>
+                            <td className="px-4 py-2">
+                              <input
+                                className="w-full bg-transparent py-1 font-medium text-text outline-none"
+                                value={row.sku}
+                                onChange={(event) => {
+                                  const next = [...rows];
+                                  next[realIndex] = { ...next[realIndex], sku: event.target.value };
+                                  setRows(next);
+                                }}
+                              />
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              <input
+                                type="number"
+                                min={1}
+                                className="w-full bg-transparent py-1 text-right font-semibold text-text outline-none"
+                                value={row.quantity}
+                                onChange={(event) => {
+                                  const next = [...rows];
+                                  const quantity = Math.max(1, Number(event.target.value) || 1);
+                                  next[realIndex] = { ...next[realIndex], quantity };
+                                  setRows(next);
+                                }}
+                              />
+                            </td>
+                            <td className="px-2 py-2">
                               <button
                                 type="button"
                                 className="rounded-md p-1 text-muted hover:bg-surface hover:text-danger"
-                                aria-label="Remove row"
-                                onClick={() => setShipments((prev) => prev.filter((_, i) => i !== realIndex))}
+                                aria-label="Remove SKU"
+                                onClick={() => setRows((prev) => prev.filter((_, i) => i !== realIndex))}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </button>
@@ -605,6 +600,14 @@ export function ManifestWorkspace() {
                         );
                       })}
                     </tbody>
+                    <tfoot>
+                      <tr className="border-t border-border bg-surface/60 font-semibold">
+                        <td className="px-4 py-2" />
+                        <td className="px-4 py-2">Total</td>
+                        <td className="px-4 py-2 text-right">{totalPieces}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
                   </table>
                 )}
               </div>

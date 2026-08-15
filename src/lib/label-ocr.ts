@@ -8,8 +8,11 @@ import {
   detectPlatform,
   emptyShipment,
   extractSkuDetails,
+  parseQuantity,
   parseShipmentText,
+  skuCountsFromText,
   type Shipment,
+  type SkuCount,
   type SkuDetails,
 } from "./manifest-parser";
 
@@ -304,4 +307,78 @@ export function shipmentFromOcrResult(
 
   if (!parsed.orderId && !parsed.awb && !parsed.sku) return null;
   return parsed;
+}
+
+export function skuCountFromOcrResult(result: Partial<SkuResult> | null | undefined): SkuCount | null {
+  const fromText = skuCountsFromText(result?.text || "", result?.platform || "auto");
+  const sku = fromText[0]?.sku || result?.sku || "";
+  if (!sku) return null;
+  return { sku, quantity: fromText[0]?.quantity || parseQuantity(result?.text || "") };
+}
+
+function splitCanvasIntoQuadrants(canvas: HTMLCanvasElement) {
+  const width = canvas.width / 2;
+  const height = canvas.height / 2;
+  return [
+    [0, 0],
+    [width, 0],
+    [0, height],
+    [width, height],
+  ].map(([x, y]) => {
+    const tile = document.createElement("canvas");
+    tile.width = width;
+    tile.height = height;
+    const ctx = tile.getContext("2d");
+    if (!ctx) return tile;
+    ctx.drawImage(canvas, x, y, width, height, 0, 0, width, height);
+    return tile;
+  });
+}
+
+/** OCR each PDF page (and 4-up tiles when several SKU labels appear) into SKU + qty rows. */
+export async function extractSkuCountsFromPdfOcr(
+  file: File,
+  options: {
+    platform?: string;
+    worker?: TesseractWorker;
+    maxPages?: number;
+    onProgress?: (progress: { page?: number; total?: number; percent?: number; phase?: string }) => void;
+  } = {},
+): Promise<SkuCount[]> {
+  const { platform = "auto", worker, maxPages = 40, onProgress } = options;
+  if (!worker) throw new Error("OCR worker is required.");
+  initPdfJsWorker();
+
+  const bytes = await file.arrayBuffer();
+  const pdf = await pdfjs.getDocument({ data: bytes }).promise;
+  const pages = Math.min(pdf.numPages, maxPages);
+  const collected: SkuCount[] = [];
+
+  for (let pageIndex = 1; pageIndex <= pages; pageIndex += 1) {
+    const page = await pdf.getPage(pageIndex);
+    const viewport = page.getViewport({ scale: 1.7 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const canvasContext = canvas.getContext("2d");
+    if (!canvasContext) throw new Error("Could not create a canvas for PDF OCR.");
+    await page.render({ canvasContext, viewport }).promise;
+    onProgress?.({ page: pageIndex, total: pages, percent: Math.round((pageIndex / pages) * 100), phase: "ocr" });
+
+    const full = await recognizeLabelImage(canvas, { platform, worker });
+    const skuLabelHits = (full.text.match(/\bsku(?:\s*id)?\b/gi) || []).length;
+    if (skuLabelHits >= 2) {
+      for (const tile of splitCanvasIntoQuadrants(canvas)) {
+        const result = await recognizeLabelImage(tile, { platform, worker });
+        const row = skuCountFromOcrResult(result);
+        if (row) collected.push(row);
+      }
+    } else {
+      const row = skuCountFromOcrResult(full);
+      if (row) collected.push(row);
+    }
+  }
+
+  await pdf.destroy();
+  return collected;
 }
