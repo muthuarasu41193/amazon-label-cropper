@@ -200,7 +200,7 @@ function extractCourier(text: string) {
 }
 
 const SKU_NOISE =
-  /^(order|id|sku|seller|qty|cod|pin|awb|gstin|hsn|india|amazon|meesho|flipkart|ekart|paid|prepaid|invoice|date|type)$/i;
+  /^(order|id|sku|seller|qty|cod|pin|awb|gstin|hsn|india|amazon|meesho|flipkart|ekart|paid|prepaid|invoice|date|type|description)$/i;
 
 function cleanSkuToken(value: string) {
   return String(value || "")
@@ -219,7 +219,8 @@ function isNoiseSku(value: string) {
   if (/^\d{4}$/.test(sku)) return true;
   if (AMAZON_ORDER.test(sku) || FLIPKART_ORDER.test(sku)) return true;
   if (/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/i.test(sku)) return true;
-  if (/^(qty|quantity|hsn|gstin)$/i.test(sku)) return true;
+  if (/^(qty|quantity|hsn|gstin|description)$/i.test(sku)) return true;
+  if (/^\d{8,}$/.test(sku)) return true;
   return false;
 }
 
@@ -250,19 +251,62 @@ function amazonSkus(text: string) {
 }
 
 function meeshoSkus(text: string) {
-  const found: string[] = labeledSkus(text);
-  for (const match of text.matchAll(/(?:product\s*id|catalog\s*id)\s*[:.\-]?\s*(\d{6,14})/gi)) {
-    found.push(match[1]);
+  return uniqueSkus(labeledSkus(text));
+}
+
+function isValidFlipkartSellerSku(value: string) {
+  const sku = cleanSkuToken(value);
+  if (isNoiseSku(sku) || isMarketplaceId(sku)) return false;
+  if (/^(description|sku|qty|quantity|sold|gstin|hsn|invoice|flipkart|ekart)$/i.test(sku)) return false;
+  if (/^\d+$/.test(sku) || sku.length > 40) return false;
+  if (/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]/i.test(sku)) return false;
+  // Seller SKUs look like Stones_B7000_Pen — not a plain word from the description.
+  return /[A-Za-z]/.test(sku) && /[0-9_-]/.test(sku);
+}
+
+/** Flipkart table is `SKU ID | Description` then `Stones_B7000_Pen | product name`. */
+function flipkartPipeSkuTokens(text: string): string[] {
+  const blob = normalizeLabelText(text);
+  const tokens: string[] = [];
+  const pattern =
+    /([A-Za-z][A-Za-z0-9._-]{2,47})\s*(?:\||│|¦)\s*(?!description\b)([A-Za-z][^\n|]{5,})/gi;
+  for (const match of blob.matchAll(pattern)) {
+    const sku = match[1];
+    const desc = String(match[2] || "").trim();
+    if (/^description$/i.test(desc)) continue;
+    if (!isValidFlipkartSellerSku(sku)) continue;
+    tokens.push(cleanSkuToken(sku));
   }
-  return uniqueSkus(found);
+  return tokens;
+}
+
+function flipkartTableSkuTokens(text: string): string[] {
+  const lines = normalizeLabelText(text)
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const tokens: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!/sku[\s\r\n]*id/i.test(lines[i]) || !/description/i.test(lines[i])) continue;
+    const data = lines[i + 1] || "";
+    const pipe = data.match(/^([A-Za-z][A-Za-z0-9._-]{2,47})\s*(?:\||│|¦)/);
+    const first = data.match(/^([A-Za-z][A-Za-z0-9._-]{2,47})(?:\s+|$)/);
+    const sku = pipe?.[1] || first?.[1] || "";
+    if (isValidFlipkartSellerSku(sku)) tokens.push(cleanSkuToken(sku));
+  }
+  return tokens;
 }
 
 function flipkartSkus(text: string) {
-  const found: string[] = labeledSkus(text);
-  for (const match of text.matchAll(/\blisting\s*id\s*[:.\-]?\s*([A-Z0-9]{8,20})/gi)) {
-    found.push(match[1]);
-  }
-  return uniqueSkus(found);
+  const fromTable = flipkartTableSkuTokens(text);
+  if (fromTable.length) return uniqueSkus(fromTable);
+  return uniqueSkus(flipkartPipeSkuTokens(text));
+}
+
+function flipkartLabelSkuCounts(text: string): SkuCount[] {
+  const fromTable = flipkartTableSkuTokens(text);
+  const tokens = fromTable.length ? fromTable : flipkartPipeSkuTokens(text);
+  return tokens.filter((sku) => isValidFlipkartSellerSku(sku)).map((sku) => ({ sku, quantity: 1 }));
 }
 
 function genericSkus(text: string) {
@@ -308,14 +352,14 @@ export function extractSkuDetails(text: string, platformHint = "auto"): SkuDetai
   else if (platform === "flipkart") skus = flipkartSkus(blob);
   else skus = [...amazonSkus(blob), ...meeshoSkus(blob), ...flipkartSkus(blob), ...genericSkus(blob)];
 
-  if (!skus.length) skus = genericSkus(blob);
+  if (!skus.length && platform !== "flipkart") skus = genericSkus(blob);
 
-  const sku = skus.find((value) => !/^B0[A-Z0-9]{8}$/i.test(value) && !/^X00/i.test(value) && value !== fsn) || skus[0] || "";
+  const sku = skus.find((value) => !isMarketplaceId(value)) || skus[0] || "";
 
   return {
     platform: platform === "unknown" ? "" : platform,
     sku,
-    skus: uniqueSkus([sku, ...skus, asin, fnsku, fsn, productId].filter(Boolean)),
+    skus: platform === "flipkart" ? uniqueSkus([sku, ...skus].filter(Boolean)) : uniqueSkus([sku, ...skus, asin, fnsku, fsn, productId].filter(Boolean)),
     asin,
     fsn: cleanSkuToken(fsn),
     fnsku,
@@ -542,28 +586,35 @@ export function skuCountsFromText(text: string, platformHint = "auto"): SkuCount
   const platform =
     platformHint !== "auto" && platformHint !== "unknown" ? platformHint : detectPlatform(blob);
 
+  if (platform === "flipkart") return flipkartLabelSkuCounts(blob);
+
   if (platform === "amazon" || platformHint === "auto") {
     const invoice = amazonInvoiceSkuCounts(blob);
-    if (invoice.length) return invoice;
+    if (invoice.length) return invoice.map((row) => ({ ...row, quantity: 1 }));
   }
 
   const details = extractSkuDetails(blob, platformHint);
-  if (!details.sku) return [];
-  return [{ sku: details.sku, quantity: parseQuantity(blob) }];
+  if (!details.sku || isMarketplaceId(details.sku)) return [];
+  return [{ sku: details.sku, quantity: 1 }];
 }
 
 function skuCountsFromItems(items: PdfGlyph[], width: number, height: number, platformHint: string): SkuCount[] {
   const fullText = itemRows(items);
+  if (platformHint === "flipkart" || detectPlatform(fullText) === "flipkart") {
+    return flipkartLabelSkuCounts(fullText);
+  }
+
   if ((platformHint === "amazon" || platformHint === "auto") && /B0[A-Z0-9]{8}\s*\(/i.test(fullText)) {
     const invoice = amazonInvoiceSkuCounts(fullText);
-    if (invoice.length) return invoice;
+    if (invoice.length) return invoice.map((row) => ({ ...row, quantity: 1 }));
   }
 
   const regions: SkuCount[] = [];
   for (const box of pageBoxes(width, height)) {
     const regionText = itemRows(itemsInBox(items, box));
     if (regionText.length < 12) continue;
-    regions.push(...skuCountsFromText(regionText, platformHint));
+    const found = skuCountsFromText(regionText, platformHint);
+    if (found[0]) regions.push({ sku: found[0].sku, quantity: 1 });
   }
 
   const sellerSkus = regions.filter((row) => !isMarketplaceId(row.sku));

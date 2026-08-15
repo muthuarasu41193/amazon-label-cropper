@@ -8,7 +8,6 @@ import {
   detectPlatform,
   emptyShipment,
   extractSkuDetails,
-  parseQuantity,
   parseShipmentText,
   skuCountsFromText,
   type Shipment,
@@ -309,11 +308,19 @@ export function shipmentFromOcrResult(
   return parsed;
 }
 
-export function skuCountFromOcrResult(result: Partial<SkuResult> | null | undefined): SkuCount | null {
-  const fromText = skuCountsFromText(result?.text || "", result?.platform || "auto");
-  const sku = fromText[0]?.sku || result?.sku || "";
-  if (!sku) return null;
-  return { sku, quantity: fromText[0]?.quantity || parseQuantity(result?.text || "") };
+export function skuCountFromOcrResult(
+  result: Partial<SkuResult> | null | undefined,
+  platformHint = "auto",
+): SkuCount | null {
+  return skuCountsFromOcrResult(result, platformHint)[0] || null;
+}
+
+export function skuCountsFromOcrResult(
+  result: Partial<SkuResult> | null | undefined,
+  platformHint = "auto",
+): SkuCount[] {
+  const platform = platformHint !== "auto" ? platformHint : result?.platform || "auto";
+  return skuCountsFromText(result?.text || "", platform);
 }
 
 function splitCanvasIntoQuadrants(canvas: HTMLCanvasElement) {
@@ -366,16 +373,18 @@ export async function extractSkuCountsFromPdfOcr(
     onProgress?.({ page: pageIndex, total: pages, percent: Math.round((pageIndex / pages) * 100), phase: "ocr" });
 
     const full = await recognizeLabelImage(canvas, { platform, worker });
-    const skuLabelHits = (full.text.match(/\bsku(?:\s*id)?\b/gi) || []).length;
-    if (skuLabelHits >= 2) {
-      for (const tile of splitCanvasIntoQuadrants(canvas)) {
-        const result = await recognizeLabelImage(tile, { platform, worker });
-        const row = skuCountFromOcrResult(result);
-        if (row) collected.push(row);
-      }
+    if (platform === "flipkart") {
+      collected.push(...skuCountsFromOcrResult(full, platform));
     } else {
-      const row = skuCountFromOcrResult(full);
-      if (row) collected.push(row);
+      const skuLabelHits = (full.text.match(/\bsku(?:\s*id)?\b/gi) || []).length;
+      if (skuLabelHits >= 2) {
+        for (const tile of splitCanvasIntoQuadrants(canvas)) {
+          const result = await recognizeLabelImage(tile, { platform, worker });
+          collected.push(...skuCountsFromOcrResult(result, platform));
+        }
+      } else {
+        collected.push(...skuCountsFromOcrResult(full, platform));
+      }
     }
   }
 

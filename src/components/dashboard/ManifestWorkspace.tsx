@@ -13,7 +13,7 @@ import {
   createOcrWorker,
   extractSkuCountsFromPdfOcr,
   extractSkuFromImages,
-  skuCountFromOcrResult,
+  skuCountsFromOcrResult,
   terminateOcrWorker,
 } from "@/lib/label-ocr";
 import {
@@ -268,7 +268,7 @@ export function ManifestWorkspace() {
     setProgress(4);
     setStatus({
       title: "Reading SKU IDs…",
-      detail: "Scanning labels for SKU and quantity. Duplicate SKUs are added together.",
+      detail: "Each shipping label counts as 1. Matching SKU IDs are added together.",
       error: false,
     });
 
@@ -304,8 +304,7 @@ export function ManifestWorkspace() {
           collected.push(...found);
         } else {
           const [ocr] = await extractSkuFromImages([item.file], { platform: item.platform, worker });
-          const parsed = skuCountFromOcrResult(ocr);
-          if (parsed) collected.push(parsed);
+          collected.push(...skuCountsFromOcrResult(ocr, item.platform));
         }
         setProgress(Math.round(((i + 1) / allFiles.length) * 100));
       }
@@ -322,8 +321,8 @@ export function ManifestWorkspace() {
         const pieces = aggregated.reduce((sum, row) => sum + row.quantity, 0);
         setStatus({
           title: "SKU count ready",
-          detail: `${aggregated.length} SKU${aggregated.length === 1 ? "" : "s"} · ${pieces} piece${pieces === 1 ? "" : "s"} from ${allFiles.length} file${allFiles.length === 1 ? "" : "s"}.`,
-          error: false,
+          detail: `${collected.length} shipping label${collected.length === 1 ? "" : "s"} · ${pieces} total count · ${aggregated.length} SKU${aggregated.length === 1 ? "" : "s"}.`,
+          error: collected.length !== pieces,
         });
       }
     } catch (error) {
@@ -499,7 +498,7 @@ export function ManifestWorkspace() {
                 </label>
               </div>
               <p className="mt-3 text-xs text-muted">
-                Reads SKU ID and quantity only. Matching SKUs are combined. Blank qty counts as 1.
+                For Flipkart, only the SKU before | is used. Each shipping label counts as 1.
               </p>
               <Button className="mt-3 w-full" disabled={!allFiles.length || isProcessing} onClick={processLabels}>
                 {isProcessing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
