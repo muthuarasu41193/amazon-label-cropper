@@ -24,6 +24,11 @@
       "source": "/index.html",
       "destination": "/",
       "permanent": true
+    },
+    {
+      "source": "/manifest.html",
+      "destination": "/crop/manifest/",
+      "permanent": false
     }
   ],
   "headers": [

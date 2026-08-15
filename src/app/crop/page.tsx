@@ -8,6 +8,7 @@ import { DownloadBar } from "@/components/dashboard/DownloadBar";
 import { OutputSettings } from "@/components/dashboard/OutputSettings";
 import { PdfPreview } from "@/components/dashboard/PdfPreview";
 import { MobileMenuButton, Sidebar } from "@/components/dashboard/Sidebar";
+import { ToolHeaderTabs } from "@/components/dashboard/ToolNav";
 import { UploadPanel, type UploadPanelHandle } from "@/components/dashboard/UploadPanel";
 import { KeyboardShortcutsHelp } from "@/components/KeyboardShortcutsHelp";
 import { PlatformLogo } from "@/components/PlatformLogo";
@@ -316,6 +317,7 @@ function CropPageContent() {
               <h1 className="text-sm font-semibold text-text">{platform.name} · LabelCrop</h1>
               <p className="hidden text-xs text-muted sm:block">{platform.layoutNote}</p>
             </div>
+            <ToolHeaderTabs platformId={platform.id} />
           </div>
           <div className="flex items-center gap-2">
             <button

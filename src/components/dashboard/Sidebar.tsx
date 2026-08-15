@@ -1,10 +1,12 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { Menu, X } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { PlatformLogo } from "@/components/PlatformLogo";
 import { SIDEBAR_GROUPS, SIDEBAR_LABELS, getPlatform, type Platform } from "@/lib/platforms";
+import { ToolNav } from "@/components/dashboard/ToolNav";
 
 type SidebarProps = {
   activePlatformId: string;
@@ -67,6 +69,9 @@ export function Sidebar({ activePlatformId, mobileOpen, onMobileClose }: Sidebar
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2.5 py-3" aria-label="Platform presets">
+        <Suspense fallback={null}>
+          <ToolNav />
+        </Suspense>
         {SIDEBAR_GROUPS.map((group) => (
           <div key={group.label} className="mb-4">
             <p className="mb-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
