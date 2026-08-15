@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { initPdfJsWorker } from "@/lib/crop-engine";
 import {
   createOcrWorker,
-  extractSkuCountsFromPdfOcr,
+  extractSkuCountsFromPdfSmart,
   extractSkuFromImages,
   skuCountsFromOcrResult,
   terminateOcrWorker,
@@ -19,7 +19,6 @@ import {
 import {
   aggregateSkuCounts,
   emptySkuCount,
-  extractSkuCountsFromPdf,
   type SkuCount,
 } from "@/lib/manifest-parser";
 import { getPlatform } from "@/lib/platforms";
@@ -286,21 +285,13 @@ export function ManifestWorkspace() {
         });
 
         if (item.kind === "pdf") {
-          let found = await extractSkuCountsFromPdf(item.file, {
-            platformHint: item.platform,
+          const found = await extractSkuCountsFromPdfSmart(item.file, {
+            platform: item.platform,
+            worker,
             onProgress: (p: { percent?: number }) => {
               setProgress(Math.round(i * (100 / allFiles.length) + ((p.percent || 0) / 100) * (100 / allFiles.length)));
             },
           });
-          if (!found.length) {
-            found = await extractSkuCountsFromPdfOcr(item.file, {
-              platform: item.platform,
-              worker,
-              onProgress: (p: { percent?: number }) => {
-                setProgress(Math.round(i * (100 / allFiles.length) + ((p.percent || 0) / 100) * (100 / allFiles.length)));
-              },
-            });
-          }
           collected.push(...found);
         } else {
           const [ocr] = await extractSkuFromImages([item.file], { platform: item.platform, worker });
@@ -498,7 +489,7 @@ export function ManifestWorkspace() {
                 </label>
               </div>
               <p className="mt-3 text-xs text-muted">
-                For Flipkart, only the SKU before | is used. Each shipping label counts as 1.
+                For Flipkart, only the first line of the SKU ID cell is used, with QTY from the QTY column. Each label counts as 1.
               </p>
               <Button className="mt-3 w-full" disabled={!allFiles.length || isProcessing} onClick={processLabels}>
                 {isProcessing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}

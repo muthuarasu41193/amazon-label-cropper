@@ -9,6 +9,7 @@ import {
   emptyShipment,
   extractSkuDetails,
   parseShipmentText,
+  skuCountsFromPdfPage,
   skuCountsFromText,
   type Shipment,
   type SkuCount,
@@ -352,7 +353,7 @@ export async function extractSkuCountsFromPdfOcr(
     onProgress?: (progress: { page?: number; total?: number; percent?: number; phase?: string }) => void;
   } = {},
 ): Promise<SkuCount[]> {
-  const { platform = "auto", worker, maxPages = 40, onProgress } = options;
+  const { platform = "auto", worker, maxPages = 120, onProgress } = options;
   if (!worker) throw new Error("OCR worker is required.");
   initPdfJsWorker();
 
@@ -371,21 +372,77 @@ export async function extractSkuCountsFromPdfOcr(
     if (!canvasContext) throw new Error("Could not create a canvas for PDF OCR.");
     await page.render({ canvasContext, viewport }).promise;
     onProgress?.({ page: pageIndex, total: pages, percent: Math.round((pageIndex / pages) * 100), phase: "ocr" });
+    collected.push(...(await ocrCanvasSkuCounts(canvas, platform, worker)));
+  }
 
-    const full = await recognizeLabelImage(canvas, { platform, worker });
-    if (platform === "flipkart") {
-      collected.push(...skuCountsFromOcrResult(full, platform));
-    } else {
-      const skuLabelHits = (full.text.match(/\bsku(?:\s*id)?\b/gi) || []).length;
-      if (skuLabelHits >= 2) {
-        for (const tile of splitCanvasIntoQuadrants(canvas)) {
-          const result = await recognizeLabelImage(tile, { platform, worker });
-          collected.push(...skuCountsFromOcrResult(result, platform));
-        }
-      } else {
-        collected.push(...skuCountsFromOcrResult(full, platform));
+  await pdf.destroy();
+  return collected;
+}
+
+async function ocrCanvasSkuCounts(
+  canvas: HTMLCanvasElement,
+  platform: string,
+  worker: TesseractWorker,
+): Promise<SkuCount[]> {
+  const full = await recognizeLabelImage(canvas, { platform, worker });
+  const fromFull = skuCountsFromOcrResult(full, platform);
+  if (platform === "flipkart") {
+    if (fromFull.length) return fromFull;
+    const tiles: SkuCount[] = [];
+    for (const tile of splitCanvasIntoQuadrants(canvas)) {
+      const result = await recognizeLabelImage(tile, { platform, worker });
+      tiles.push(...skuCountsFromOcrResult(result, platform));
+    }
+    return tiles;
+  }
+  const skuLabelHits = (full.text.match(/\bsku(?:\s*id)?\b/gi) || []).length;
+  if (skuLabelHits >= 2) {
+    const tiles: SkuCount[] = [];
+    for (const tile of splitCanvasIntoQuadrants(canvas)) {
+      const result = await recognizeLabelImage(tile, { platform, worker });
+      tiles.push(...skuCountsFromOcrResult(result, platform));
+    }
+    return tiles.length ? tiles : fromFull;
+  }
+  return fromFull;
+}
+
+/** Text-extract each PDF page; OCR only pages that did not yield a SKU. */
+export async function extractSkuCountsFromPdfSmart(
+  file: File,
+  options: {
+    platform?: string;
+    worker?: TesseractWorker;
+    onProgress?: (progress: { page?: number; total?: number; percent?: number; phase?: string }) => void;
+  } = {},
+): Promise<SkuCount[]> {
+  const { platform = "auto", worker, onProgress } = options;
+  initPdfJsWorker();
+  const bytes = await file.arrayBuffer();
+  const pdf = await pdfjs.getDocument({ data: bytes }).promise;
+  const collected: SkuCount[] = [];
+
+  for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
+    const page = await pdf.getPage(pageIndex);
+    const viewport = page.getViewport({ scale: 1 });
+    const textContent = await page.getTextContent();
+    let found = skuCountsFromPdfPage(textContent, viewport.width, viewport.height, platform);
+    onProgress?.({ page: pageIndex, total: pdf.numPages, percent: Math.round((pageIndex / pdf.numPages) * 100), phase: "text" });
+
+    if (!found.length && worker) {
+      const ocrViewport = page.getViewport({ scale: 1.7 });
+      const canvas = document.createElement("canvas");
+      canvas.width = ocrViewport.width;
+      canvas.height = ocrViewport.height;
+      const canvasContext = canvas.getContext("2d");
+      if (canvasContext) {
+        await page.render({ canvasContext, viewport: ocrViewport }).promise;
+        found = await ocrCanvasSkuCounts(canvas, platform, worker);
+        onProgress?.({ page: pageIndex, total: pdf.numPages, percent: Math.round((pageIndex / pdf.numPages) * 100), phase: "ocr" });
       }
     }
+
+    collected.push(...found);
   }
 
   await pdf.destroy();

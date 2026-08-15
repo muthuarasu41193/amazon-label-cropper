@@ -256,26 +256,52 @@ function meeshoSkus(text: string) {
 
 function isValidFlipkartSellerSku(value: string) {
   const sku = cleanSkuToken(value);
-  if (isNoiseSku(sku) || isMarketplaceId(sku)) return false;
-  if (/^(description|sku|qty|quantity|sold|gstin|hsn|invoice|flipkart|ekart)$/i.test(sku)) return false;
-  if (/^\d+$/.test(sku) || sku.length > 40) return false;
-  if (/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]/i.test(sku)) return false;
-  // Seller SKUs look like Stones_B7000_Pen — not a plain word from the description.
-  return /[A-Za-z]/.test(sku) && /[0-9_-]/.test(sku);
+  if (!sku || sku.length < 3 || sku.length > 60) return false;
+  if (isMarketplaceId(sku.replace(/\s/g, ""))) return false;
+  if (/^(description|sku|qty|quantity|sold|gstin|hsn|invoice|flipkart|ekart|stones)$/i.test(sku)) return false;
+  if (/jewellery|jewelry|multicolor|sold by|gstin/i.test(sku) && !/\d/.test(sku)) return false;
+  if (/^\d+$/.test(sku)) return false;
+  if (/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]/i.test(sku.replace(/\s/g, ""))) return false;
+  if (!/[A-Za-z]/.test(sku)) return false;
+  // Wrapped leftover like "Stones" — a real Flipkart SKU has a digit, hyphen, or underscore.
+  if (!/[\d_-]/.test(sku) && !/\s/.test(sku)) return false;
+  if (!/[\d_-]/.test(sku) && sku.split(/\s+/).length < 2) return false;
+  return true;
 }
 
-/** Flipkart table is `SKU ID | Description` then `Stones_B7000_Pen | product name`. */
+function recoverFlipkartSku(line: string) {
+  const stop = /^(cartol|diy|jewellery|jewelry|kit|with|multicolor|gold|silver|pack|pcs|piece|description|qty)$/i;
+  const words = String(line || "")
+    .replace(/^\d{1,2}\s+/, "")
+    .split(/\s+/)
+    .filter(Boolean);
+  const kept: string[] = [];
+  let seenDigit = false;
+  let extraAfterDigit = 0;
+  for (const word of words) {
+    if (stop.test(word) && kept.length) break;
+    if (seenDigit && extraAfterDigit >= 1) break;
+    kept.push(word);
+    if (/\d/.test(word)) seenDigit = true;
+    else if (seenDigit) extraAfterDigit += 1;
+    if (kept.length >= 6) break;
+  }
+  const sku = kept.join(" ").trim();
+  return isValidFlipkartSellerSku(sku) ? sku : "";
+}
+
+/** Flipkart table is `SKU ID | Description` then `Stones B7000 Pen | product name`. */
 function flipkartPipeSkuTokens(text: string): string[] {
   const blob = normalizeLabelText(text);
   const tokens: string[] = [];
-  const pattern =
-    /([A-Za-z][A-Za-z0-9._-]{2,47})\s*(?:\||│|¦)\s*(?!description\b)([A-Za-z][^\n|]{5,})/gi;
-  for (const match of blob.matchAll(pattern)) {
-    const sku = match[1];
-    const desc = String(match[2] || "").trim();
-    if (/^description$/i.test(desc)) continue;
-    if (!isValidFlipkartSellerSku(sku)) continue;
-    tokens.push(cleanSkuToken(sku));
+  for (const line of blob.split(/\n/)) {
+    const parts = line.split(/\s*(?:\||│|¦)\s*/);
+    if (parts.length < 2) continue;
+    const left = parts[0].replace(/^\d{1,2}\s+/, "").trim();
+    const right = parts[1].trim();
+    if (/sku\s*id/i.test(left) && /description/i.test(right)) continue;
+    const sku = isValidFlipkartSellerSku(left) ? left : recoverFlipkartSku(left);
+    if (sku && /[A-Za-z]{3,}/.test(right) && !/^description$/i.test(right)) tokens.push(sku);
   }
   return tokens;
 }
@@ -287,12 +313,11 @@ function flipkartTableSkuTokens(text: string): string[] {
     .filter(Boolean);
   const tokens: string[] = [];
   for (let i = 0; i < lines.length; i += 1) {
-    if (!/sku[\s\r\n]*id/i.test(lines[i]) || !/description/i.test(lines[i])) continue;
+    if (!/sku[\s\r\n]*id/i.test(lines[i])) continue;
     const data = lines[i + 1] || "";
-    const pipe = data.match(/^([A-Za-z][A-Za-z0-9._-]{2,47})\s*(?:\||│|¦)/);
-    const first = data.match(/^([A-Za-z][A-Za-z0-9._-]{2,47})(?:\s+|$)/);
-    const sku = pipe?.[1] || first?.[1] || "";
-    if (isValidFlipkartSellerSku(sku)) tokens.push(cleanSkuToken(sku));
+    const pipe = data.split(/\s*(?:\||│|¦)\s*/)[0]?.replace(/^\d{1,2}\s+/, "").trim() || "";
+    const sku = isValidFlipkartSellerSku(pipe) ? pipe : recoverFlipkartSku(data);
+    if (sku) tokens.push(sku);
   }
   return tokens;
 }
@@ -304,9 +329,96 @@ function flipkartSkus(text: string) {
 }
 
 function flipkartLabelSkuCounts(text: string): SkuCount[] {
-  const fromTable = flipkartTableSkuTokens(text);
-  const tokens = fromTable.length ? fromTable : flipkartPipeSkuTokens(text);
+  const blob = normalizeLabelText(text);
+  const fromTable = flipkartTableSkuTokens(blob);
+  const tokens = fromTable.length ? fromTable : flipkartPipeSkuTokens(blob);
   return tokens.filter((sku) => isValidFlipkartSellerSku(sku)).map((sku) => ({ sku, quantity: 1 }));
+}
+
+type GlyphRow = { y: number; items: PdfGlyph[] };
+
+function clusterGlyphRows(items: PdfGlyph[]): GlyphRow[] {
+  const rows: GlyphRow[] = [];
+  const sorted = [...items].sort((a, b) => {
+    if (Math.abs(a.y - b.y) > 3) return b.y - a.y;
+    return a.x - b.x;
+  });
+
+  for (const item of sorted) {
+    const row = rows.find((candidate) => Math.abs(candidate.y - item.y) <= 4);
+    if (row) {
+      row.items.push(item);
+      row.y = (row.y + item.y) / 2;
+    } else {
+      rows.push({ y: item.y, items: [item] });
+    }
+  }
+
+  return rows.map((row) => ({
+    y: row.y,
+    items: [...row.items].sort((a, b) => a.x - b.x),
+  }));
+}
+
+function glyphRowText(row: GlyphRow) {
+  return row.items
+    .map((item) => item.text)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Read the SKU ID cell (first line only) and the QTY cell from each Flipkart product table. */
+function flipkartSkuCountsFromGlyphs(items: PdfGlyph[]): SkuCount[] {
+  const rows = clusterGlyphRows(items);
+  const counts: SkuCount[] = [];
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const headerText = glyphRowText(rows[i]);
+    if (!/sku/i.test(headerText) || !/id/i.test(headerText)) continue;
+
+    const skuHeader = rows[i].items.find((item) => /sku/i.test(item.text));
+    const descHeader = rows[i].items.find((item) => /description/i.test(item.text));
+    const qtyHeader = rows[i].items.find((item) => /^qty\.?$/i.test(item.text.trim()) || /^quantity$/i.test(item.text.trim()));
+    if (!skuHeader) continue;
+
+    const skuLeft = skuHeader.x - 6;
+    const descLeft = descHeader ? descHeader.x - 10 : skuLeft + 150;
+    const qtyLeft = qtyHeader ? qtyHeader.x - 12 : (descHeader ? descHeader.x + 120 : skuLeft + 280);
+    const qtyRight = qtyLeft + 90;
+
+    let sku = "";
+    let qty = 1;
+    for (let j = i + 1; j < Math.min(i + 10, rows.length); j += 1) {
+      const row = rows[j];
+      const text = glyphRowText(row);
+      if (/sku/i.test(text) && /id/i.test(text)) break;
+      if (/not for resale|printed at/i.test(text)) break;
+
+      const skuBits = row.items
+        .filter((item) => item.x >= skuLeft && item.x < descLeft)
+        .map((item) => item.text.trim())
+        .filter((token) => token && !/^\d{1,2}$/.test(token));
+      const line = skuBits.join(" ").replace(/\s+/g, " ").trim();
+      if (!sku && line) {
+        sku = isValidFlipkartSellerSku(line) ? line : recoverFlipkartSku(line);
+      }
+
+      const qtyItem = row.items.find(
+        (item) => item.x >= qtyLeft && item.x <= qtyRight && /^\d{1,3}$/.test(item.text.trim()),
+      );
+      if (qtyItem) {
+        const n = Number(qtyItem.text.trim());
+        if (n > 0 && n < 500) qty = n;
+      }
+
+      if (sku) break;
+    }
+
+    if (sku) counts.push({ sku, quantity: qty });
+  }
+
+  return counts;
 }
 
 function genericSkus(text: string) {
@@ -417,31 +529,8 @@ export function parseShipmentText(text: string, platformHint = "auto"): Shipment
 }
 
 function itemRows(items: PdfGlyph[]) {
-  const rows: { y: number; items: PdfGlyph[] }[] = [];
-  const sorted = [...items].sort((a, b) => {
-    if (Math.abs(a.y - b.y) > 3) return b.y - a.y;
-    return a.x - b.x;
-  });
-
-  for (const item of sorted) {
-    const row = rows.find((candidate) => Math.abs(candidate.y - item.y) <= 3);
-    if (row) {
-      row.items.push(item);
-      row.y = (row.y + item.y) / 2;
-    } else {
-      rows.push({ y: item.y, items: [item] });
-    }
-  }
-
-  return rows
-    .map((row) =>
-      row.items
-        .sort((a, b) => a.x - b.x)
-        .map((item) => item.text)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim(),
-    )
+  return clusterGlyphRows(items)
+    .map((row) => glyphRowText(row))
     .filter(Boolean)
     .join("\n");
 }
@@ -601,6 +690,20 @@ export function skuCountsFromText(text: string, platformHint = "auto"): SkuCount
 function skuCountsFromItems(items: PdfGlyph[], width: number, height: number, platformHint: string): SkuCount[] {
   const fullText = itemRows(items);
   if (platformHint === "flipkart" || detectPlatform(fullText) === "flipkart") {
+    const spatial = flipkartSkuCountsFromGlyphs(items);
+    if (spatial.length) return spatial;
+
+    const regions: SkuCount[] = [];
+    for (const box of pageBoxes(width, height)) {
+      const boxed = itemsInBox(items, box);
+      const fromBox = flipkartSkuCountsFromGlyphs(boxed);
+      if (fromBox.length) {
+        regions.push(...fromBox);
+        continue;
+      }
+      regions.push(...flipkartLabelSkuCounts(itemRows(boxed)));
+    }
+    if (regions.length) return regions;
     return flipkartLabelSkuCounts(fullText);
   }
 
@@ -627,15 +730,28 @@ export function aggregateSkuCounts(rows: SkuCount[]): SkuCount[] {
   const merged = new Map<string, SkuCount>();
   for (const row of rows) {
     const sku = cleanSkuToken(row.sku);
-    if (!sku || isNoiseSku(sku)) continue;
+    if (!sku) continue;
     const quantity = Number(row.quantity);
     const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
-    const key = sku.toUpperCase();
+    const key = sku.replace(/[\s_]+/g, "_").toUpperCase();
     const existing = merged.get(key);
     if (existing) existing.quantity += qty;
     else merged.set(key, { sku, quantity: qty });
   }
   return [...merged.values()].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: "base" }));
+}
+
+export function skuCountsFromPdfPage(
+  textContent: { items: unknown[] },
+  width: number,
+  height: number,
+  platformHint = "auto",
+): SkuCount[] {
+  const normal = textItemsFromContent(textContent, height, false);
+  const flipped = textItemsFromContent(textContent, height, true);
+  const normalFound = skuCountsFromItems(normal, width, height, platformHint);
+  const flippedFound = skuCountsFromItems(flipped, width, height, platformHint);
+  return normalFound.length >= flippedFound.length ? normalFound : flippedFound;
 }
 
 export async function extractSkuCountsFromPdf(
@@ -655,11 +771,7 @@ export async function extractSkuCountsFromPdf(
     const page = await pdf.getPage(pageIndex);
     const viewport = page.getViewport({ scale: 1 });
     const textContent = await page.getTextContent();
-    const normal = textItemsFromContent(textContent, viewport.height, false);
-    const flipped = textItemsFromContent(textContent, viewport.height, true);
-    const normalFound = skuCountsFromItems(normal, viewport.width, viewport.height, platformHint);
-    const flippedFound = skuCountsFromItems(flipped, viewport.width, viewport.height, platformHint);
-    collected.push(...(normalFound.length >= flippedFound.length ? normalFound : flippedFound));
+    collected.push(...skuCountsFromPdfPage(textContent, viewport.width, viewport.height, platformHint));
     onProgress?.({
       file: file.name,
       page: pageIndex,
