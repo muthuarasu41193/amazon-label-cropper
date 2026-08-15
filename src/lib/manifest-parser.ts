@@ -1,10 +1,38 @@
-// @ts-nocheck
 /**
  * Extract dispatch-manifest rows from Amazon, Meesho, and Flipkart shipping-label PDFs.
  * Runs entirely in the browser via PDF.js.
  */
 import * as pdfjs from "pdfjs-dist";
 import { initPdfJsWorker } from "./crop-engine";
+
+type PdfGlyph = { text: string; x: number; y: number };
+type Box = { left: number; bottom: number; right: number; top: number };
+
+export type Shipment = {
+  platform: string;
+  orderId: string;
+  awb: string;
+  customer: string;
+  city: string;
+  pin: string;
+  quantity: string;
+  payment: string;
+  amount: string;
+  sku: string;
+  product: string;
+  courier: string;
+  shipDate: string;
+};
+
+export type SkuDetails = {
+  platform: string;
+  sku: string;
+  skus: string[];
+  asin: string;
+  fsn: string;
+  fnsku: string;
+  productId: string;
+};
 
 const AMAZON_ORDER = /\b(\d{3}-\d{7}-\d{7})\b/;
 const FLIPKART_ORDER = /\b(OD\d{14,22})\b/i;
@@ -24,18 +52,18 @@ const CITY_LABEL = /(?:\bcity\b|\bdestination\b)\s*[:.\-]?\s*([A-Za-z][A-Za-z ]{
 const COURIER_NAMES =
   /\b(Delhivery|Ekart|eKart|Amazon Shipping|ATS|ATSPL|Shadowfax|Xpressbees|Ecom Express|Blue Dart|DTDC|India Post|Meesho Logistics|Valmo)\b/i;
 
-function normalizeSpace(text) {
+function normalizeSpace(text: string) {
   return String(text || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function firstCapture(text, pattern) {
+function firstCapture(text: string, pattern: RegExp) {
   const match = text.match(pattern);
   return match?.[1] ? normalizeSpace(match[1]) : "";
 }
 
-export function detectPlatform(text) {
+export function detectPlatform(text: string) {
   const blob = String(text || "");
   const lower = blob.toLowerCase();
 
@@ -47,7 +75,7 @@ export function detectPlatform(text) {
   return "unknown";
 }
 
-function extractOrderId(text, platform) {
+function extractOrderId(text: string, platform: string) {
   if (platform === "amazon" || AMAZON_ORDER.test(text)) {
     const amazon = firstCapture(text, AMAZON_ORDER);
     if (amazon) return amazon;
@@ -61,7 +89,7 @@ function extractOrderId(text, platform) {
   return "";
 }
 
-function extractAwb(text, orderId) {
+function extractAwb(text: string, orderId: string) {
   const labeled = firstCapture(text, AWB_LABEL);
   if (labeled && labeled !== orderId && !AMAZON_ORDER.test(labeled) && !FLIPKART_ORDER.test(labeled)) {
     return labeled;
@@ -81,7 +109,7 @@ function extractAwb(text, orderId) {
   return candidates[0] || "";
 }
 
-function extractPin(text) {
+function extractPin(text: string) {
   const labeled = firstCapture(text, PIN_LABEL);
   if (labeled) return labeled;
 
@@ -89,7 +117,7 @@ function extractPin(text) {
   return pins.find((pin) => !/^0{2,}/.test(pin)) || "";
 }
 
-function extractQuantity(text) {
+function extractQuantity(text: string) {
   const labeled = firstCapture(text, QTY_LABEL);
   if (labeled && Number(labeled) > 0 && Number(labeled) < 500) return labeled;
 
@@ -101,23 +129,23 @@ function extractQuantity(text) {
   return "";
 }
 
-function extractPayment(text) {
+function extractPayment(text: string) {
   if (/\bcash\s*on\s*delivery\b|\bcod\b|\bcollectable\b/i.test(text)) return "COD";
   if (/\bpre[-\s]?paid\b|\bprepaid\b|\bpaid\b/i.test(text)) return "Prepaid";
   return "";
 }
 
-function extractAmount(text) {
+function extractAmount(text: string) {
   const labeled = firstCapture(text, AMOUNT_LABEL);
   if (labeled) return labeled.replace(/,/g, "");
   return "";
 }
 
-function extractCustomer(text) {
+function extractCustomer(text: string) {
   return firstCapture(text, CUSTOMER_LABEL).replace(/\b(name|address)\b/gi, "").trim();
 }
 
-function extractCity(text, pin) {
+function extractCity(text: string, pin: string) {
   const labeled = firstCapture(text, CITY_LABEL);
   if (labeled && !/^(city|destination)$/i.test(labeled)) return labeled;
 
@@ -132,12 +160,12 @@ function extractCity(text, pin) {
   return "";
 }
 
-function extractProduct(text, sku = "") {
+function extractProduct(text: string, sku = "") {
   return (
     text
       .split(/\n/)
-      .map((entry) => normalizeSpace(entry))
-      .find((entry) => {
+      .map((entry: string) => normalizeSpace(entry))
+      .find((entry: string) => {
         if (entry.length < 8 || entry.length > 80) return false;
         if (sku && entry.toLowerCase() === sku.toLowerCase()) return false;
         if (
@@ -152,7 +180,7 @@ function extractProduct(text, sku = "") {
   );
 }
 
-function extractCourier(text) {
+function extractCourier(text: string) {
   const named = text.match(COURIER_NAMES);
   if (named?.[1]) return named[1];
   return firstCapture(text, /(?:courier|logistics|shipping\s*partner)\s*[:.\-]?\s*([A-Za-z][A-Za-z ]{2,28})/i);
@@ -161,7 +189,7 @@ function extractCourier(text) {
 const SKU_NOISE =
   /^(order|id|sku|seller|qty|cod|pin|awb|gstin|hsn|india|amazon|meesho|flipkart|ekart|paid|prepaid|invoice|date|type)$/i;
 
-function cleanSkuToken(value) {
+function cleanSkuToken(value: string) {
   return String(value || "")
     .replace(/[|[\]]/g, "")
     .replace(/\s+/g, " ")
@@ -169,7 +197,7 @@ function cleanSkuToken(value) {
     .replace(/[.,;:]+$/g, "");
 }
 
-function isNoiseSku(value) {
+function isNoiseSku(value: string) {
   const sku = cleanSkuToken(value);
   if (!sku || sku.length < 3 || sku.length > 48) return true;
   if (SKU_NOISE.test(sku)) return true;
@@ -182,9 +210,9 @@ function isNoiseSku(value) {
   return false;
 }
 
-function uniqueSkus(values) {
-  const seen = new Set();
-  const list = [];
+function uniqueSkus(values: string[]) {
+  const seen = new Set<string>();
+  const list: string[] = [];
   for (const value of values) {
     const sku = cleanSkuToken(value);
     if (isNoiseSku(sku)) continue;
@@ -196,8 +224,8 @@ function uniqueSkus(values) {
   return list;
 }
 
-function amazonSkus(text) {
-  const found = [];
+function amazonSkus(text: string) {
+  const found: string[] = [];
   const asinParen = [...text.matchAll(/B0[A-Z0-9]{8}\s*\(\s*([^)]{2,48}?)\s*\)/gi)];
   for (const match of asinParen) found.push(match[1]);
 
@@ -211,8 +239,8 @@ function amazonSkus(text) {
   return uniqueSkus(found);
 }
 
-function meeshoSkus(text) {
-  const found = [];
+function meeshoSkus(text: string) {
+  const found: string[] = [];
   const labeled = [
     /(?:sku\s*id|supplier\s*sku|product\s*sku|sku)\s*[:.\-]?\s*([A-Z0-9][A-Z0-9 +_\-./]{2,48})/gi,
     /(?:product\s*id|catalog\s*id)\s*[:.\-]?\s*(\d{6,14})/gi,
@@ -223,8 +251,8 @@ function meeshoSkus(text) {
   return uniqueSkus(found);
 }
 
-function flipkartSkus(text) {
-  const found = [];
+function flipkartSkus(text: string) {
+  const found: string[] = [];
   const labeled = [
     /(?:seller\s*sku|sku\s*id|sku)\s*[:.\-]?\s*([A-Z0-9][A-Z0-9 +_\-./]{2,48})/gi,
     /\bfsn\s*[:.\-]?\s*([A-Z0-9]{10,16})/gi,
@@ -238,8 +266,8 @@ function flipkartSkus(text) {
   return uniqueSkus(found);
 }
 
-function genericSkus(text) {
-  const found = [];
+function genericSkus(text: string) {
+  const found: string[] = [];
   for (const match of text.matchAll(/(?:seller\s*sku|sku\s*id|sku)\s*[:.\-]?\s*([A-Z0-9][A-Z0-9 +_\-./]{2,48})/gi)) {
     found.push(match[1]);
   }
@@ -253,7 +281,7 @@ function genericSkus(text) {
  * Pull seller SKU / product IDs from OCR or PDF text for Amazon, Meesho, and Flipkart labels.
  * @returns {{ platform: string, sku: string, skus: string[], asin: string, fsn: string, fnsku: string, productId: string }}
  */
-export function extractSkuDetails(text, platformHint = "auto") {
+export function extractSkuDetails(text: string, platformHint = "auto"): SkuDetails {
   const blob = String(text || "")
     .replace(/\u00a0/g, " ")
     .replace(/\b5KU\b/gi, "SKU")
@@ -267,7 +295,7 @@ export function extractSkuDetails(text, platformHint = "auto") {
     || "";
   const productId = firstCapture(blob, /(?:product\s*id|catalog\s*id)\s*[:.\-]?\s*(\d{6,14})/i);
 
-  let skus = [];
+  let skus: string[] = [];
   if (platform === "amazon") skus = amazonSkus(blob);
   else if (platform === "meesho") skus = meeshoSkus(blob);
   else if (platform === "flipkart") skus = flipkartSkus(blob);
@@ -288,7 +316,7 @@ export function extractSkuDetails(text, platformHint = "auto") {
   };
 }
 
-export function emptyShipment() {
+export function emptyShipment(): Shipment {
   return {
     platform: "",
     orderId: "",
@@ -306,7 +334,7 @@ export function emptyShipment() {
   };
 }
 
-export function parseShipmentText(text, platformHint = "auto") {
+export function parseShipmentText(text: string, platformHint = "auto"): Shipment | null {
   const blob = String(text || "").replace(/\u00a0/g, " ");
   const skuInfo = extractSkuDetails(blob, platformHint);
   const platform = platformHint !== "auto" && platformHint !== "unknown" ? platformHint : skuInfo.platform || detectPlatform(blob);
@@ -337,8 +365,8 @@ export function parseShipmentText(text, platformHint = "auto") {
   return shipment;
 }
 
-function itemRows(items) {
-  const rows = [];
+function itemRows(items: PdfGlyph[]) {
+  const rows: { y: number; items: PdfGlyph[] }[] = [];
   const sorted = [...items].sort((a, b) => {
     if (Math.abs(a.y - b.y) > 3) return b.y - a.y;
     return a.x - b.x;
@@ -367,26 +395,31 @@ function itemRows(items) {
     .join("\n");
 }
 
-function textItemsFromContent(textContent, pageHeight, flipY = false) {
-  return textContent.items
-    .map((item) => {
-      const rawY = item.transform[5];
-      return {
-        text: item.str,
+function textItemsFromContent(textContent: { items: unknown[] }, pageHeight: number, flipY = false): PdfGlyph[] {
+  return textContent.items.flatMap((raw) => {
+    if (!raw || typeof raw !== "object" || !("transform" in raw)) return [];
+    const item = raw as { str?: string; transform?: number[] };
+    if (!Array.isArray(item.transform)) return [];
+    const rawY = item.transform[5];
+    const text = String(item.str || "");
+    if (!text.trim()) return [];
+    return [
+      {
+        text,
         x: item.transform[4],
         y: flipY ? pageHeight - rawY : rawY,
-      };
-    })
-    .filter((item) => item.text && item.text.trim());
+      },
+    ];
+  });
 }
 
-function itemsInBox(items, box) {
+function itemsInBox(items: PdfGlyph[], box: Box) {
   return items.filter(
-    (item) => item.x >= box.left && item.x <= box.right && item.y >= box.bottom && item.y <= box.top,
+    (item: PdfGlyph) => item.x >= box.left && item.x <= box.right && item.y >= box.bottom && item.y <= box.top,
   );
 }
 
-function pageBoxes(width, height) {
+function pageBoxes(width: number, height: number) {
   const midX = width / 2;
   const midY = height / 2;
   return [
@@ -397,8 +430,8 @@ function pageBoxes(width, height) {
   ];
 }
 
-function shipmentsFromItems(items, width, height, platformHint) {
-  const found = [];
+function shipmentsFromItems(items: PdfGlyph[], width: number, height: number, platformHint: string) {
+  const found: Shipment[] = [];
 
   for (const box of pageBoxes(width, height)) {
     const regionText = itemRows(itemsInBox(items, box));
@@ -413,14 +446,14 @@ function shipmentsFromItems(items, width, height, platformHint) {
   return full ? [full] : [];
 }
 
-function mergeField(current, next) {
+function mergeField(current: string, next: string) {
   if (!current) return next || "";
   if (!next) return current;
   return next.length > current.length ? next : current;
 }
 
-export function mergeShipments(list) {
-  const merged = [];
+export function mergeShipments(list: Shipment[]) {
+  const merged: Shipment[] = [];
 
   for (const shipment of list) {
     if (!shipment) continue;
@@ -432,7 +465,7 @@ export function mergeShipments(list) {
       continue;
     }
 
-    for (const field of Object.keys(existing)) {
+    for (const field of Object.keys(existing) as (keyof Shipment)[]) {
       existing[field] = mergeField(existing[field], shipment[field]);
     }
   }
@@ -452,7 +485,7 @@ export async function extractShipmentsFromPdf(
   const bytes = await file.arrayBuffer();
   const loadingTask = pdfjs.getDocument({ data: bytes });
   const pdf = await loadingTask.promise;
-  const collected = [];
+  const collected: Shipment[] = [];
 
   for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
     const page = await pdf.getPage(pageIndex);

@@ -60,7 +60,7 @@ function isInvoiceIdentityWithoutShipping(text: string) {
  * E-invoice QRs can fake a barcode score — invoice identity without Ship To / AWB is dropped
  * even when a barcode is detected. Real shipping labels always have Ship To or AWB text.
  */
-function isUnwantedInvoiceRegion(text: string, _hasBarcode: boolean) {
+function isUnwantedInvoiceRegion(text: string) {
   if (STRONG_SHIPPING_MARKER_PATTERN.test(text)) return false;
   return isInvoiceIdentityWithoutShipping(text);
 }
@@ -486,7 +486,7 @@ function validateAndRefinePairs(
     const regionText = textItemsInRegion(textContent, item.pair.labelBox, pageHeight);
     const isBlank = item.density < CONTENT_DENSITY;
     // Keep every barcode-backed shipping label. Drop Sold By / invoice panels only when no barcode.
-    if (isUnwantedInvoiceRegion(regionText, item.hasBarcode)) continue;
+    if (isUnwantedInvoiceRegion(regionText)) continue;
     const missingBarcode = requireBarcode && !item.hasBarcode;
     const isInvoice = item.hasInvoiceText && !item.hasLabelText && !item.hasBarcode;
     if (isBlank || missingBarcode || isInvoice) continue;
@@ -513,8 +513,8 @@ function validateAndRefinePairs(
         refinedText,
       );
       if (!refinedMetrics.hasBarcode) continue;
-      if (isUnwantedInvoiceRegion(refinedText, refinedMetrics.hasBarcode)) continue;
-    } else if (isUnwantedInvoiceRegion(refinedText, item.hasBarcode)) {
+      if (isUnwantedInvoiceRegion(refinedText)) continue;
+    } else if (isUnwantedInvoiceRegion(refinedText)) {
       continue;
     }
 
@@ -648,7 +648,7 @@ export async function scanPageForLabels(
       const acceptedIndexes = new Set<number>();
       for (let i = 0; i < scored.length; i += 1) {
         const regionText = textItemsInRegion(textContent, scored[i].pair.labelBox, pageHeight);
-        if (isUnwantedInvoiceRegion(regionText, scored[i].hasBarcode)) continue;
+        if (isUnwantedInvoiceRegion(regionText)) continue;
         const isBlank = scored[i].density < CONTENT_DENSITY;
         const missingBarcode = barcodeRequired && !scored[i].hasBarcode;
         const isInvoice = scored[i].hasInvoiceText && !scored[i].hasLabelText && !scored[i].hasBarcode;
@@ -692,7 +692,7 @@ export async function scanPageForLabels(
   for (const box of candidates) {
     const regionText = textItemsInRegion(textContent, box, pageHeight);
     const metrics = scoreLabelRegion(imageData, viewport, box, pageWidth, pageHeight, regionText);
-    if (isUnwantedInvoiceRegion(regionText, metrics.hasBarcode)) continue;
+    if (isUnwantedInvoiceRegion(regionText)) continue;
     scored.push({ box, ...metrics });
   }
 
