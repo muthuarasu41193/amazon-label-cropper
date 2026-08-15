@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta
+      name="description"
+      content="Build a dispatch handover manifest from Amazon, Meesho, and Flipkart shipping labels — entirely in your browser."
+    />
+    <title>Manifest Creator · LabelForge</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/base.css?v=2.6.0" />
+    <link rel="stylesheet" href="css/cropper.css?v=2.6.0" />
+    <link rel="stylesheet" href="css/manifest.css?v=2.6.0" />
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+  </head>
+  <body>
+    <header class="site-nav site-nav--border">
+      <a class="brand-lockup" href="index.html">
+        <span class="brand-mark" aria-hidden="true">LF</span>
+        <span class="brand-name">LabelForge</span>
+      </a>
+      <nav class="feature-switch" aria-label="Suite features">
+        <a id="cropperLink" class="feature-switch__item" href="crop.html?p=amazon">Label Cropper</a>
+        <a class="feature-switch__item is-active" href="manifest.html" aria-current="page">Manifest Creator</a>
+      </nav>
+      <div class="nav-actions">
+        <span class="chip chip--live">Processing locally</span>
+        <span class="chip chip--version">v2.6</span>
+        <a class="btn btn--ghost" href="index.html">All tools</a>
+      </div>
+    </header>
+
+    <main class="manifest-shell">
+      <a class="back-link" href="index.html">← Back to all tools</a>
+
+      <header class="manifest-header">
+        <div class="manifest-header__left">
+          <span class="platform-badge" aria-hidden="true">MC</span>
+          <div>
+            <h1>Manifest Creator</h1>
+            <p class="manifest-header__tagline">
+              Drop Amazon, Meesho, and Flipkart labels into their own trays — PNG, JPG, or PDF. Preview each file,
+              then process them into an editable handover sheet.
+            </p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="csvButton" class="btn btn--ghost" type="button" disabled>Download CSV</button>
+          <button id="pdfButton" class="btn btn--primary" type="button" disabled>Download PDF manifest</button>
+        </div>
+      </header>
+
+      <div class="manifest-layout">
+        <div class="upload-deck" id="uploadDeck">
+          <section class="panel platform-zone" data-platform="amazon" style="--zone-accent: #ff9900; --zone-accent-rgb: 255, 153, 0">
+            <header class="zone-header">
+              <span class="zone-badge" aria-hidden="true">A</span>
+              <div class="zone-heading">
+                <h2>Amazon Labels</h2>
+                <p>PNG, JPG, or PDF · multiple files</p>
+              </div>
+              <button class="btn btn--ghost btn--small zone-clear" type="button" data-clear="amazon" disabled>Clear All</button>
+            </header>
+            <label class="drop-zone drop-zone--platform" for="amazonFiles">
+              <input id="amazonFiles" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg,application/pdf,.pdf" multiple />
+              <span class="drop-icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                </svg>
+              </span>
+              <span class="drop-title">Drop Amazon labels</span>
+              <span class="drop-copy">or click to browse</span>
+            </label>
+            <p class="zone-count" data-count="amazon">0 files</p>
+            <div class="thumb-grid" data-thumbs="amazon"></div>
+          </section>
+
+          <section class="panel platform-zone" data-platform="meesho" style="--zone-accent: #9f2089; --zone-accent-rgb: 159, 32, 137">
+            <header class="zone-header">
+              <span class="zone-badge" aria-hidden="true">M</span>
+              <div class="zone-heading">
+                <h2>Meesho Labels</h2>
+                <p>PNG, JPG, or PDF · multiple files</p>
+              </div>
+              <button class="btn btn--ghost btn--small zone-clear" type="button" data-clear="meesho" disabled>Clear All</button>
+            </header>
+            <label class="drop-zone drop-zone--platform" for="meeshoFiles">
+              <input id="meeshoFiles" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg,application/pdf,.pdf" multiple />
+              <span class="drop-icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                </svg>
+              </span>
+              <span class="drop-title">Drop Meesho labels</span>
+              <span class="drop-copy">or click to browse</span>
+            </label>
+            <p class="zone-count" data-count="meesho">0 files</p>
+            <div class="thumb-grid" data-thumbs="meesho"></div>
+          </section>
+
+          <section class="panel platform-zone" data-platform="flipkart" style="--zone-accent: #2874f0; --zone-accent-rgb: 40, 116, 240">
+            <header class="zone-header">
+              <span class="zone-badge" aria-hidden="true">F</span>
+              <div class="zone-heading">
+                <h2>Flipkart Labels</h2>
+                <p>PNG, JPG, or PDF · multiple files</p>
+              </div>
+              <button class="btn btn--ghost btn--small zone-clear" type="button" data-clear="flipkart" disabled>Clear All</button>
+            </header>
+            <label class="drop-zone drop-zone--platform" for="flipkartFiles">
+              <input id="flipkartFiles" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg,application/pdf,.pdf" multiple />
+              <span class="drop-icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                </svg>
+              </span>
+              <span class="drop-title">Drop Flipkart labels</span>
+              <span class="drop-copy">or click to browse</span>
+            </label>
+            <p class="zone-count" data-count="flipkart">0 files</p>
+            <div class="thumb-grid" data-thumbs="flipkart"></div>
+          </section>
+        </div>
+
+        <div class="panel process-panel">
+          <div class="meta-grid">
+            <label class="field">
+              Seller / warehouse
+              <input id="sellerName" type="text" placeholder="Your business name" autocomplete="organization" />
+            </label>
+            <label class="field">
+              Dispatch date
+              <input id="dispatchDate" type="date" />
+            </label>
+          </div>
+          <p class="process-hint">OCR reads SKU and product IDs from Amazon, Meesho, and Flipkart label photos. Cells stay editable. Nothing is uploaded.</p>
+          <button id="processButton" class="btn btn--primary btn--block" type="button" disabled>
+            <span class="btn-label">Process Labels</span>
+            <span class="btn-spinner" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <div class="panel result-panel manifest-result">
+          <div class="status-card" aria-live="polite">
+            <div class="status-card__main">
+              <span id="statusText">Waiting for shipping labels.</span>
+              <div id="progressWrap" class="progress-wrap">
+                <div id="progressBar" class="progress-bar"></div>
+              </div>
+            </div>
+            <span id="detailText"></span>
+          </div>
+
+          <div class="stats-row">
+            <div class="stat-box">
+              <strong id="statShipments">0</strong>
+              <span>Shipments</span>
+            </div>
+            <div class="stat-box">
+              <strong id="statCod">0</strong>
+              <span>COD</span>
+            </div>
+            <div class="stat-box">
+              <strong id="statPrepaid">0</strong>
+              <span>Prepaid</span>
+            </div>
+            <div class="stat-box">
+              <strong id="statAmount">0</strong>
+              <span>COD amount</span>
+            </div>
+          </div>
+
+          <div class="table-toolbar">
+            <input id="searchField" class="search-field" type="search" placeholder="Filter AWB, order ID, city…" />
+            <button id="addRowButton" class="btn btn--ghost btn--small" type="button">Add blank row</button>
+          </div>
+
+          <div class="table-wrap">
+            <table class="manifest-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Platform</th>
+                  <th>AWB / Tracking</th>
+                  <th>Order ID</th>
+                  <th>SKU</th>
+                  <th>Customer</th>
+                  <th>City</th>
+                  <th>PIN</th>
+                  <th>Qty</th>
+                  <th>Payment</th>
+                  <th>Amount</th>
+                  <th>Product</th>
+                  <th>Courier</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+            <div id="emptyTable" class="empty-table">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+                <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+              </svg>
+              <span>Manifest rows appear here after you scan labels</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <p>Labels never leave this device — PDFs and photos are read locally in your browser.</p>
+    </footer>
+
+    <script type="module" src="js/manifest-app.js?v=2.6.0"></script>
+  </body>
+</html>

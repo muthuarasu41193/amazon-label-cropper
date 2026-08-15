@@ -95,6 +95,75 @@
   color: var(--brand);
 }
 
+#suiteTools {
+  margin-bottom: 48px;
+}
+
+.suite-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.suite-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 24px;
+  border-radius: var(--radius);
+  border: 1px solid var(--stroke);
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  transition: border-color 0.2s, background 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.suite-card:hover {
+  border-color: rgba(var(--card-accent-rgb), 0.45);
+  background: var(--bg-card-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(var(--card-accent-rgb), 0.12);
+}
+
+.suite-card__icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(var(--card-accent-rgb), 0.15);
+  color: var(--card-accent);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.suite-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.suite-card__name {
+  font-weight: 800;
+  font-size: 1.12rem;
+  letter-spacing: -0.02em;
+}
+
+.suite-card__desc {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.suite-card__cta {
+  margin-left: auto;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--card-accent);
+  white-space: nowrap;
+}
+
 #platformGrid {
   display: flex;
   flex-direction: column;
@@ -256,5 +325,9 @@
 
   .hero {
     padding-top: 28px;
+  }
+
+  .suite-cards {
+    grid-template-columns: 1fr;
   }
 }

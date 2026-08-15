@@ -8,7 +8,7 @@
     <meta http-equiv="Expires" content="0" />
     <meta
       name="description"
-      content="LabelForge — premium browser tools to crop Amazon, Flipkart, Meesho and other ecommerce shipping labels for thermal printers."
+      content="LabelForge — crop shipping labels and build dispatch manifests for Amazon, Flipkart, Meesho, and other ecommerce marketplaces."
     />
     <title>LabelForge — Ecommerce Label Suite</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -17,8 +17,8 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="css/base.css?v=2.3.0" />
-    <link rel="stylesheet" href="css/hub.css?v=2.3.0" />
+    <link rel="stylesheet" href="css/base.css?v=2.4.0" />
+    <link rel="stylesheet" href="css/hub.css?v=2.4.0" />
   </head>
   <body>
     <header class="site-nav site-nav--border">
@@ -26,6 +26,10 @@
         <span class="brand-mark" aria-hidden="true">LF</span>
         <span class="brand-name">LabelForge <span>Suite</span></span>
       </a>
+      <nav class="feature-switch" aria-label="Suite features">
+        <a class="feature-switch__item" href="crop.html?p=amazon">Label Cropper</a>
+        <a class="feature-switch__item" href="manifest.html">Manifest Creator</a>
+      </nav>
       <div class="nav-actions">
         <span class="chip">100% browser-side</span>
         <span class="chip chip--live">Private · No upload</span>
@@ -35,10 +39,10 @@
     <main class="hub-main">
       <section class="hero">
         <p class="hero__badge">Ecommerce operations toolkit</p>
-        <h1>Shipping labels, cropped perfectly — for every marketplace</h1>
+        <h1>Shipping labels, cropped perfectly — plus a dispatch manifest</h1>
         <p class="hero__lead">
-          Turn bulky 2-label-per-page PDFs into clean 4×6 thermal prints. Smart scanning finds every label — even when
-          Amazon shifts the layout. Zero server uploads.
+          Crop bulky 2-label-per-page PDFs into clean 4×6 thermal prints, or scan Amazon, Meesho, and Flipkart labels
+          into a handover sheet. Smart scanning finds every label. Zero server uploads.
         </p>
         <div class="hero__stats">
           <div class="stat-pill">
@@ -78,6 +82,8 @@
         </div>
       </div>
 
+      <div id="suiteTools" aria-label="Suite tools"></div>
+
       <div id="platformGrid" aria-label="Label croppers by platform"></div>
 
       <section class="roadmap-section" aria-labelledby="roadmap-title">
@@ -98,6 +104,6 @@
       <p>© LabelForge Suite · Built for marketplace & D2C sellers in India.</p>
     </footer>
 
-    <script type="module" src="js/hub.js?v=2.3.0"></script>
+    <script type="module" src="js/hub.js?v=2.4.0"></script>
   </body>
 </html>

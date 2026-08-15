@@ -13,14 +13,14 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="css/base.css?v=2.3.0" />
-    <link rel="stylesheet" href="css/cropper.css?v=2.3.0" />
+    <link rel="stylesheet" href="css/base.css?v=2.4.0" />
+    <link rel="stylesheet" href="css/cropper.css?v=2.4.0" />
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   </head>
   <body>
     <div class="update-banner" role="status">
-      Smart Scan v2.3 — multi-item invoices now show every SKU and exact quantity per product.
+      v2.4 — Manifest Creator is live. Switch tabs to build a dispatch sheet from Amazon, Meesho, and Flipkart labels.
     </div>
 
     <header class="site-nav site-nav--border">
@@ -28,15 +28,19 @@
         <span class="brand-mark" aria-hidden="true">LF</span>
         <span class="brand-name">LabelForge</span>
       </a>
+      <nav class="feature-switch" aria-label="Suite features">
+        <a class="feature-switch__item is-active" href="crop.html" aria-current="page">Label Cropper</a>
+        <a id="manifestLink" class="feature-switch__item" href="manifest.html">Manifest Creator</a>
+      </nav>
       <div class="nav-actions">
         <span class="chip chip--live">Processing locally</span>
-        <span class="chip chip--version">v2.3</span>
+        <span class="chip chip--version">v2.4</span>
         <a class="btn btn--ghost" href="index.html">All tools</a>
       </div>
     </header>
 
     <main class="cropper-shell">
-      <a class="back-link" href="index.html">← Back to all croppers</a>
+      <a class="back-link" href="index.html">← Back to all tools</a>
 
       <header class="cropper-header">
         <div class="cropper-header__left">
@@ -181,6 +185,6 @@
       <p>PDF never uploaded — cropped on your machine only.</p>
     </footer>
 
-    <script type="module" src="js/cropper-app.js?v=2.3.0"></script>
+    <script type="module" src="js/cropper-app.js?v=2.4.0"></script>
   </body>
 </html>

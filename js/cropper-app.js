@@ -1,5 +1,5 @@
-import { getPlatform } from "./platforms.js?v=2.3.0";
-import { createCroppedPdf, initPdfJsWorker } from "./crop-engine.js?v=2.3.0";
+import { getPlatform } from "./platforms.js?v=2.4.0";
+import { createCroppedPdf, initPdfJsWorker } from "./crop-engine.js?v=2.4.0";
 
 initPdfJsWorker();
 
@@ -47,6 +47,11 @@ els.platformIcon.textContent = platform.icon;
 els.layoutNote.textContent = platform.layoutNote;
 els.dropCopy.textContent = platform.uploadHint;
 document.title = `${platform.name} Label Cropper · LabelForge`;
+
+const cropperTab = document.querySelector(".feature-switch__item.is-active");
+if (cropperTab) cropperTab.href = `crop.html?p=${encodeURIComponent(platform.id)}`;
+const manifestLink = document.getElementById("manifestLink");
+if (manifestLink) manifestLink.href = `manifest.html?p=${encodeURIComponent(platform.id)}`;
 
 const d = platform.defaults;
 els.cropPreset.value = d.cropPreset;

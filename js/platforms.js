@@ -13,14 +13,13 @@ export const PLATFORMS = {
     defaults: {
       cropPreset: "left-half",
       leftPercent: 50,
-      labelHeightPercent: 50,
-      marginPercent: 0.5,
+      marginPercent: 1,
       includeInvoiceText: true,
       skipBlank: true,
       smartScan: true,
     },
     uploadHint: "Upload the official Amazon multi-label shipping PDF.",
-    layoutNote: "Shipping label on the left (50%), tax invoice on the right — 2 labels per A4 page.",
+    layoutNote: "Smart scan finds every label — even when Amazon shifts layout.",
   },
   flipkart: {
     id: "flipkart",
@@ -31,16 +30,14 @@ export const PLATFORMS = {
     icon: "F",
     category: "marketplace",
     defaults: {
-      cropPreset: "top-split",
-      leftPercent: 100,
-      labelHeightPercent: 50,
-      marginPercent: 0.5,
-      includeInvoiceText: false,
+      cropPreset: "left-half",
+      leftPercent: 48,
+      marginPercent: 1,
+      includeInvoiceText: true,
       skipBlank: true,
-      smartScan: true,
     },
     uploadHint: "Upload Flipkart seller panel shipping PDF export.",
-    layoutNote: "Shipping label on top (50%), tax invoice on the bottom — invoice removed automatically.",
+    layoutNote: "Most exports use left-column labels with invoice on the right.",
   },
   meesho: {
     id: "meesho",
@@ -51,16 +48,14 @@ export const PLATFORMS = {
     icon: "M",
     category: "marketplace",
     defaults: {
-      cropPreset: "top-split",
-      leftPercent: 100,
-      labelHeightPercent: 58,
-      marginPercent: 0.5,
-      includeInvoiceText: false,
+      cropPreset: "left-half",
+      leftPercent: 52,
+      marginPercent: 0.75,
+      includeInvoiceText: true,
       skipBlank: true,
-      smartScan: true,
     },
     uploadHint: "Upload Meesho bulk shipping label PDF.",
-    layoutNote: "Shipping label on top (58%), tax invoice on the bottom — invoice removed automatically.",
+    layoutNote: "Adjust left width if labels look clipped on your template.",
   },
   myntra: {
     id: "myntra",
@@ -293,6 +288,29 @@ export const CATEGORY_LABELS = {
   utility: "Utilities",
 };
 
+export const MANIFEST_PLATFORMS = ["amazon", "flipkart", "meesho"];
+
+export const SUITE_TOOLS = [
+  {
+    id: "cropper",
+    name: "Label Cropper",
+    description: "Crop marketplace shipping PDFs into clean 4×6 thermal labels.",
+    href: "crop.html?p=amazon",
+    accent: "#14b8a6",
+    accentRgb: "20, 184, 166",
+    icon: "LC",
+  },
+  {
+    id: "manifest",
+    name: "Manifest Creator",
+    description: "Build a dispatch handover sheet from Amazon, Meesho, and Flipkart labels.",
+    href: "manifest.html",
+    accent: "#6366f1",
+    accentRgb: "99, 102, 241",
+    icon: "MC",
+  },
+];
+
 /** Roadmap tools — shown on hub, not yet implemented */
 export const SUGGESTED_TOOLS = [
   {
@@ -342,13 +360,6 @@ export const SUGGESTED_TOOLS = [
     name: "HSN Code Assistant",
     description: "Suggest HSN codes from product titles for GST filing prep.",
     category: "finance",
-    status: "planned",
-  },
-  {
-    id: "manifest",
-    name: "Dispatch Manifest",
-    description: "Build daily handover manifests from scanned AWB lists.",
-    category: "shipping",
     status: "planned",
   },
   {

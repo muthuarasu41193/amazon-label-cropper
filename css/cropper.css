@@ -84,6 +84,7 @@
   gap: 8px;
   min-height: 168px;
   place-content: center;
+  position: relative;
   border: 2px dashed var(--stroke-strong);
   border-radius: var(--radius-sm);
   padding: 22px;

@@ -1,7 +1,37 @@
-import { PLATFORM_LIST, CATEGORY_LABELS, SUGGESTED_TOOLS } from "./platforms.js?v=2.3.0";
+import { PLATFORM_LIST, CATEGORY_LABELS, SUGGESTED_TOOLS, SUITE_TOOLS } from "./platforms.js?v=2.4.0";
 
 const platformGrid = document.getElementById("platformGrid");
 const toolRoadmap = document.getElementById("toolRoadmap");
+const suiteTools = document.getElementById("suiteTools");
+
+if (suiteTools) {
+  const heading = document.createElement("h2");
+  heading.className = "section-title";
+  heading.textContent = "Suite tools";
+  suiteTools.appendChild(heading);
+
+  const grid = document.createElement("div");
+  grid.className = "suite-cards";
+
+  for (const tool of SUITE_TOOLS) {
+    const card = document.createElement("a");
+    card.className = "suite-card";
+    card.href = tool.href;
+    card.style.setProperty("--card-accent", tool.accent);
+    card.style.setProperty("--card-accent-rgb", tool.accentRgb);
+    card.innerHTML = `
+      <span class="suite-card__icon" aria-hidden="true">${tool.icon}</span>
+      <span class="suite-card__body">
+        <span class="suite-card__name">${tool.name}</span>
+        <span class="suite-card__desc">${tool.description}</span>
+      </span>
+      <span class="suite-card__cta">Open →</span>
+    `;
+    grid.appendChild(card);
+  }
+
+  suiteTools.appendChild(grid);
+}
 
 const grouped = PLATFORM_LIST.reduce((acc, platform) => {
   const key = platform.category;

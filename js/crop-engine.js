@@ -1,9 +1,9 @@
-import { scanPageForLabels, regionHasContent } from "./label-scanner.js?v=2.3.0";
+import { scanPageForLabels, regionHasContent } from "./label-scanner.js?v=2.4.0";
 import {
   parseInvoiceDetails,
   isInvoiceDetected,
   infoAreaHeightForDetails,
-} from "./invoice-parser.js?v=2.3.0";
+} from "./invoice-parser.js?v=2.4.0";
 
 const { PDFDocument, StandardFonts, rgb } = PDFLib;
 

@@ -1,10 +1,11 @@
 # LabelForge — Ecommerce Label Suite
 
-A premium, browser-only toolkit for Indian ecommerce sellers. Crop multi-label shipping PDFs into **one thermal label per page** for Amazon, Flipkart, Meesho, and 10+ more platforms.
+A premium, browser-only toolkit for Indian ecommerce sellers. Crop multi-label shipping PDFs into **one thermal label per page**, or build a **dispatch manifest** from Amazon, Meesho, and Flipkart labels.
 
 ## Features
 
-- **14+ marketplace & logistics croppers** with tuned default settings per platform
+- **Label Cropper** — 14+ marketplace & logistics croppers with tuned default settings per platform
+- **Manifest Creator** — scan Amazon, Meesho, and Flipkart shipping PDFs into an editable handover sheet (CSV + PDF)
 - **4×6 thermal** output, fit modes, margin trim, blank-label skip
 - **Product name + quantity** pulled from invoice column (where supported)
 - **100% client-side** — no server, no account, no upload
@@ -24,20 +25,24 @@ cd amazon-label-cropper
 python -m http.server 5501
 ```
 
-Open [http://127.0.0.1:5501](http://127.0.0.1:5501) for the hub, or go directly to a cropper:
+Open [http://127.0.0.1:5501](http://127.0.0.1:5501) for the hub, or go directly to a tool:
 
-- [Amazon](http://127.0.0.1:5501/cropper.html?p=amazon)
-- [Flipkart](http://127.0.0.1:5501/cropper.html?p=flipkart)
-- [Meesho](http://127.0.0.1:5501/cropper.html?p=meesho)
+- [Amazon cropper](http://127.0.0.1:5501/crop.html?p=amazon)
+- [Flipkart cropper](http://127.0.0.1:5501/crop.html?p=flipkart)
+- [Meesho cropper](http://127.0.0.1:5501/crop.html?p=meesho)
+- [Manifest Creator](http://127.0.0.1:5501/manifest.html)
 
 ## Project structure
 
 ```
-index.html          Hub — pick a platform
-cropper.html?p=…    Workbench for one platform
-js/platforms.js     Platform presets & roadmap tools
+index.html          Hub — pick a platform or suite tool
+crop.html?p=…       Label cropper workbench
+manifest.html       Dispatch manifest from shipping-label PDFs
+js/platforms.js     Platform presets & suite tools
 js/crop-engine.js   PDF crop logic
 js/cropper-app.js   Cropper UI
+js/manifest-parser.js  AWB / order extraction
+js/manifest-app.js  Manifest UI
 js/hub.js           Hub rendering
 css/                Premium design system
 ```
